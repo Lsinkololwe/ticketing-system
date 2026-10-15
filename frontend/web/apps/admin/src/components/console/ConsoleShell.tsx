@@ -25,15 +25,15 @@ const BUYER_URL = process.env.NEXT_PUBLIC_BUYER_APP_URL ?? 'http://localhost:300
 const ORGANIZER_URL = process.env.NEXT_PUBLIC_ORGANIZER_APP_URL ?? 'http://localhost:3003';
 
 export function buildSections(
-  roles: Parameters<typeof modulesFor>[0],
+  permissions: Parameters<typeof modulesFor>[0],
   current: ModuleId | null,
   badges: Partial<Record<ModuleId, number>>
 ): NavSection[] {
   const groups = new Map<string, NavItem[]>();
-  for (const m of modulesFor(roles)) {
+  for (const m of modulesFor(permissions)) {
     const list = groups.get(m.group) ?? [];
     // The first tab this role may open, not the module's first tab: finance has only the audit log here.
-    const firstTab = tabsFor(roles, m.id)[0];
+    const firstTab = tabsFor(permissions, m.id)[0];
     const first = firstTab ? `${m.path}/${firstTab.id}` : m.path;
     list.push({ id: m.id, label: m.label, icon: m.icon, href: first, current: m.id === current, badge: badges[m.id] });
     groups.set(m.group, list);
@@ -70,7 +70,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
     transactions: stuck || undefined,
     health: openAlerts || undefined,
   };
-  const sections = buildSections(staff.roles, current, badges);
+  const sections = buildSections(staff.permissions, current, badges);
   const top = staff.roles[0];
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { resolvedTheme, setTheme } = useTheme();
@@ -86,7 +86,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const pending = pendingFor(staff.roles, counts);
+  const pending = pendingFor(staff.permissions, counts);
   const pendingTotal = pending.reduce((a, x) => a + x.count, 0);
   const role = primaryRole(staff.roles);
   const bellItems: MenuEntry[] = [
@@ -165,9 +165,9 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
         }}
       >
         {children}
-        {tabsFor(staff.roles, 'transactions').some((t) => t.id === 'recovery') ? <StuckProbe onCount={setStuck} /> : null}
-        {canOpenModule(staff.roles, 'health') ? <AlertProbe onCount={setOpenAlerts} /> : null}
-        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} roles={staff.roles} />
+        {tabsFor(staff.permissions, 'transactions').some((t) => t.id === 'recovery') ? <StuckProbe onCount={setStuck} /> : null}
+        {canOpenModule(staff.permissions, 'health') ? <AlertProbe onCount={setOpenAlerts} /> : null}
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} permissions={staff.permissions} />
       </AppShell>
     </ConsoleUiProvider>
   );

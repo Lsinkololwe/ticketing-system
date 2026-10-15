@@ -1,6 +1,8 @@
 package com.pml.identity.service.impl;
 
 import java.util.Map;
+import com.pml.shared.error.TranslatedRefusal;
+import com.pml.shared.error.ErrorCode;
 import com.pml.shared.event.EventType;
 import com.pml.shared.event.EventEnvelopes;
 import com.pml.shared.constants.OrganizationStatus;
@@ -169,7 +171,8 @@ public class OrganizationServiceImpl implements OrganizationService {
     public Mono<Organization> suspend(String id, String reason) {
         log.info("Suspending organization: {} - Reason: {}", id, reason);
         return organizationRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Organization not found: " + id)))
+                .switchIfEmpty(Mono.error(() -> new TranslatedRefusal(ErrorCode.ORGANIZATION_UNKNOWN,
+                        "organization " + id)))
                 .flatMap(org -> {
                     org.setStatus(OrganizationStatus.SUSPENDED);
                     org.setSuspensionReason(reason);
@@ -196,10 +199,12 @@ public class OrganizationServiceImpl implements OrganizationService {
     public Mono<Organization> unsuspend(String id) {
         log.info("Unsuspending organization: {}", id);
         return organizationRepository.findById(id)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("Organization not found: " + id)))
+                .switchIfEmpty(Mono.error(() -> new TranslatedRefusal(ErrorCode.ORGANIZATION_UNKNOWN,
+                        "organization " + id)))
                 .flatMap(org -> {
                     if (org.getStatus() != OrganizationStatus.SUSPENDED) {
-                        return Mono.error(new IllegalStateException("Organization is not suspended"));
+                        return Mono.error(new TranslatedRefusal(ErrorCode.ORGANIZATION_STATE_INVALID,
+                                "organization " + id + " is not suspended"));
                     }
                     org.setStatus(OrganizationStatus.ACTIVE);
                     org.setSuspensionReason(null);

@@ -20,16 +20,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * their sets. Pure values.
  */
 @Tag("L1")
-@Tag("ET-ORG-003")
+@Tag("ET-PLT-013")
 @DisplayName("The permission catalogue is closed and platform roles grant exactly their sets")
 class PermissionCatalogueTest {
 
     @Test
-    @DisplayName("Thirty permissions, every code unique")
-    void thirtyUniqueCodes() {
+    @DisplayName("Every code is unique, and the catalogue has the 86 permissions the platform checks")
+    void uniqueCodes() {
         Set<String> codes = Arrays.stream(Permission.values()).map(Permission::code).collect(Collectors.toSet());
-        assertThat(Permission.values()).hasSize(30);
-        assertThat(codes).hasSize(30);
+        assertThat(codes).hasSize(Permission.values().length);
+        assertThat(Permission.values()).hasSize(86);
     }
 
     @ParameterizedTest
@@ -52,11 +52,14 @@ class PermissionCatalogueTest {
     }
 
     @Test
-    @DisplayName("SUPER_ADMIN holds everything; ADMIN everything but platform configuration")
+    @DisplayName("SUPER_ADMIN holds everything; ADMIN everything but the four things reserved to super admin or finance")
     void administratorSets() {
         assertThat(Permission.grantedByPlatformRoles(List.of("SUPER_ADMIN"))).containsExactlyInAnyOrder(Permission.values());
         assertThat(Permission.grantedByPlatformRoles(List.of("ADMIN")))
-                .containsExactlyInAnyOrderElementsOf(EnumSet.complementOf(EnumSet.of(PLATFORM_CONFIGURE)));
+                .containsExactlyInAnyOrderElementsOf(PlatformGrantExpectations.admin());
+        assertThat(Permission.grantedByPlatformRoles(List.of("ADMIN")))
+                .as("platform configuration is the super administrator's alone")
+                .doesNotContain(PLATFORM_CONFIGURE);
         assertThat(Permission.grantedByPlatformRoles(List.of("ADMIN", "SUPER_ADMIN")))
                 .as("holding both is the larger set, whatever the order").contains(PLATFORM_CONFIGURE);
     }
@@ -64,9 +67,8 @@ class PermissionCatalogueTest {
     @Test
     @DisplayName("FINANCE is its own money-and-audit set, not a slice of ADMIN")
     void financeSet() {
-        assertThat(Permission.grantedByPlatformRoles(List.of("FINANCE"))).containsExactlyInAnyOrder(
-                FINANCIAL_VIEW, PAYOUT_APPROVE, TICKET_REFUND, TRANSACTION_RECOVER, AUDIT_VIEW,
-                ORGANIZATION_VIEW, EVENT_VIEW);
+        assertThat(Permission.grantedByPlatformRoles(List.of("FINANCE")))
+                .containsExactlyInAnyOrderElementsOf(PlatformGrantExpectations.FINANCE);
         assertThat(Permission.grantedByPlatformRoles(List.of("FINANCE")))
                 .doesNotContain(ORGANIZATION_SUSPEND, EVENT_EDIT, ATTENDEE_VIEW);
     }

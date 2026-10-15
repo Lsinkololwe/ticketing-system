@@ -15,7 +15,7 @@ spring:
       pool:
         size: ${SCHEDULER_POOL_SIZE:10}
   profiles:
-    # Defaults to "local" (Service Bus emulator). Prod sets SPRING_PROFILES_ACTIVE=prod.
+    # Defaults to "local" (the docker-resources dev stack). Prod sets SPRING_PROFILES_ACTIVE=prod.
     active: ${SPRING_PROFILES_ACTIVE:local}
   application:
     name: booking-service
@@ -59,63 +59,20 @@ spring:
         client-id: ${AZURE_CLIENT_ID:}
         client-secret: ${AZURE_CLIENT_SECRET:}
         tenant-id: ${AZURE_TENANT_ID:}
-      servicebus:
-        connection-string: ${azure-servicebus-connection-string:${AZURE_SERVICEBUS_CONNECTION_STRING:}}
-        # No `namespace` key on purpose. An empty one is still "set": it overrides the connection string and sends the
-        # producer to ".servicebus.windows.net", where every send times out. Managed-identity deployments set
-        # SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE in the environment instead.
-        retry:
-          mode: exponential
-          max-retries: 3
-          delay: 1s
-          max-delay: 30s
-          try-timeout: 60s
-        producer:
-          send-timeout: 30s
-        consumer:
-          prefetch-count: 10
-          max-concurrent-calls: 5
-          auto-complete: false
-          max-auto-lock-renew-duration: 5m
-    stream:
-      default-binder: servicebus
-      function:
-        definition: catalogEventConsumer
-      bindings:
-        # The binding the outbox drain publishes on, through EventBridge.
-        bookingEvents-out-0:
-          destination: booking-events
-        catalogEventConsumer-in-0:
-          destination: catalog-events
-          # The subscription name. booking-sub is the one the broker defines with sessions required, so a
-          # tier's capacity change cannot overtake the tier's creation.
-          group: booking-sub
-          consumer:
-            max-attempts: 3
-            back-off-initial-interval: 1000
-            back-off-max-interval: 10000
-            back-off-multiplier: 2.0
-            default-retryable: true
-      servicebus:
-        bindings:
-          catalogEventConsumer-in-0:
-            consumer:
-              entity-type: topic
-              checkpoint-mode: RECORD
-              auto-complete: false
-              prefetch-count: 10
-              max-concurrent-calls: 5
-              max-auto-lock-renew-duration: 5m
-              sub-queue: none
-              receive-mode: peek-lock
-              session-enabled: true
-          bookingEvents-out-0:
-            producer:
-              entity-type: topic
-              # The binder sends asynchronously unless told otherwise: send() then returns true before the
-              # bus has accepted anything and a later failure is only logged, so the outbox would mark the
-              # event sent and lose it. Synchronous sends raise on failure, which keeps the row pending.
-              sync: true
+  # RabbitMQ carries the cross-service events (identity-events, catalog-events, booking-events).
+  # The broker, its virtual host and this service's credentials are provisioned by the environment;
+  # none has a default, so a missing value stops startup naming the property rather than starting a
+  # service whose outbox can never drain.
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: ${RABBITMQ_VHOST}
+    # A publish completes only when the broker has confirmed it. The outbox marks a row sent when the
+    # publish completes, so an unconfirmed publish that later failed would be a message the platform
+    # believed it delivered.
+    publisher-confirm-type: simple
 
   data:
     mongodb:
@@ -368,13 +325,13 @@ platform:
     # Memberships come from identity-service, which owns them.
     identity-url: ${services.identity.url}
   # The transactional outbox. Payment outcomes and ticket purchases stage their
-  # envelopes here inside the business transaction; the drain publishes them on bookingEvents-out-0.
+  # envelopes here inside the business transaction; the drain publishes them on the booking-events exchange.
   outbox:
     collection: booking_outbox
-    binding: bookingEvents-out-0
+    exchange: booking-events
     drain-interval: PT2S
   # The consumer retry budget, stated rather than defaulted.
-  # Spring Cloud Stream has a default for each of these, which is how a service
+  # A messaging client has a default for each of these, which is how a service
   # can look configured while retrying a dead provider ten times a second or
   # giving up after a single attempt. ConsumerRetryLintTest fails the build if
   # any goes missing. Three attempts over roughly two seconds: long enough to

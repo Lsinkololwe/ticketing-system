@@ -1,6 +1,8 @@
 package com.pml.identity.web.graphql.query;
 
 import com.pml.identity.security.IdentityTenantReads;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import java.util.Objects;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
@@ -79,7 +81,7 @@ public class VerificationDocumentQueryResolver {
      * Get documents for organization (admin only).
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.KYB_DOCUMENT_VIEW)
     public Flux<VerificationDocument> verificationDocuments(
             @InputArgument String organizationId,
             @InputArgument DocumentStatus status) {
@@ -95,7 +97,7 @@ public class VerificationDocumentQueryResolver {
      * Get pending documents queue (admin only).
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.KYB_DOCUMENT_VIEW)
     public Flux<VerificationDocument> pendingVerificationDocuments() {
         log.debug("GraphQL query: pendingVerificationDocuments");
         return documentService.findPendingDocuments();

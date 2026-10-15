@@ -1,6 +1,8 @@
 package com.pml.identity.web.graphql.mutation;
 
 import com.pml.identity.security.IdentityTenantReads;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -182,7 +184,7 @@ public class VerificationDocumentMutationResolver {
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.approveVerificationDocument")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.KYB_DOCUMENT_APPROVE)
     public Mono<VerificationDocument> approveVerificationDocument(
             @InputArgument String documentId) {
         return SecurityContextUtils.getCurrentUserId()
@@ -196,7 +198,7 @@ public class VerificationDocumentMutationResolver {
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.rejectVerificationDocument")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.KYB_DOCUMENT_APPROVE)
     public Mono<VerificationDocument> rejectVerificationDocument(
             @InputArgument String documentId,
             @InputArgument String reason) {

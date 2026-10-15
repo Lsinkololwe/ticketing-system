@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.TicketReservation;
@@ -95,7 +97,7 @@ public class ReservationQueryResolver {
      * Schema: myActiveReservations(userId: ID!): [TicketReservation!]!
      */
     @DgsQuery
-    @PreAuthorize("isAuthenticated() and (#userId == authentication.principal.subject or hasAnyRole('ADMIN', 'FINANCE'))")
+    @PreAuthorize("@permissionGuards.ownerOrPermission(authentication, #userId, 'buyer:view')")
     public Flux<TicketReservation> myActiveReservations(@InputArgument String userId) {
         log.debug("GraphQL query: myActiveReservations(userId={})", userId);
         Objects.requireNonNull(userId, "User ID is required");
@@ -111,7 +113,7 @@ public class ReservationQueryResolver {
      * Schema: reservationsByEvent(eventId: ID!, pagination: OffsetPaginationInput): ReservationOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'reservation:view', #eventId)")
     public Mono<ReservationOffsetPage> reservationsByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
@@ -127,7 +129,7 @@ public class ReservationQueryResolver {
      * Schema: expiredReservations(eventId: ID, since: DateTime!, pagination: OffsetPaginationInput): ReservationOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.RESERVATION_VIEW)
     public Mono<ReservationOffsetPage> expiredReservations(
             @InputArgument String eventId,
             @InputArgument OffsetDateTime since,

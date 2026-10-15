@@ -132,7 +132,7 @@ PostgreSQL and Redis matching the deployed versions.
 - [ ] Each test class gets a clean database, not a fresh container
 - [ ] A transaction test writes two documents, fails after the first, and observes neither — and this test **fails** if the container is not a replica set
 - [ ] No test uses an embedded or in-memory MongoDB
-- [ ] Azure Service Bus is faked by a local test binder; no test requires an Azure subscription
+- [ ] RabbitMQ runs as a Testcontainers broker (`RabbitNode`) on its own virtual host; no test needs a shared broker or a cloud subscription
 
 ### ET-PLT-006-R3 · Time is frozen, and every deadline has boundary tests
 
@@ -234,7 +234,7 @@ Declared once, in `TestContainers`, matching what is deployed.
 |---|---|---|
 | `mongo` | 8.x | **`--replSet rs0`**, initiated in a `@BeforeAll`; a standalone container must fail R2 |
 | `redis` | 7.x | |
-| Service Bus | — | Spring Cloud Stream **test binder**; no Azure dependency |
+| RabbitMQ | `RabbitNode` | the same `rabbitmq:4-management-alpine` image as the compose file |
 
 ### The refusal-test shape
 

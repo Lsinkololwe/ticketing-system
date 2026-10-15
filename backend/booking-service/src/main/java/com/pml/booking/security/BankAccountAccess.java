@@ -12,10 +12,9 @@ import reactor.core.publisher.Mono;
 /**
  * Who may add, see and manage an organization's payout accounts.
  *
- * <p>A payout account belongs to the organization. The person who may change where its money goes is
- * whoever holds the payout permission there (an administrator only when the owner has switched it
- * on), which is the same decision that lets them request a payout: adding a destination is the step
- * where someone could send the money to themselves, so it is held to no lower bar than withdrawing.
+ * <p>A payout account belongs to the organization. The people who may change where its money goes
+ * are those holding the bank-account permission there, which owners and administrators carry
+ * whatever the owner has switched for payout requests: adding a destination is not asking for money.
  * Platform staff act on every organization. Every refusal reads as an unknown account, so an id is
  * never confirmed to someone who may not manage it.
  */
@@ -37,7 +36,7 @@ public class BankAccountAccess {
                         return Mono.<String>empty();
                     }
                     return SecurityContextUtils.requireCurrentUserId()
-                            .flatMap(userId -> payoutAccess.mayRequest(userId, organizationId, null))
+                            .flatMap(userId -> payoutAccess.mayManageBankAccounts(userId, organizationId))
                             .filter(Boolean::booleanValue)
                             .map(allowed -> organizationId);
                 })).switchIfEmpty(Mono.error(() -> TenantBoundary.refuse(ErrorCode.BANK_ACCOUNT_UNKNOWN, "bank account")));

@@ -83,8 +83,8 @@ class PermissionModelMigrationTest {
                         .append("customPermissions", List.of("analytics:view")));
         insert(IdentityCollections.EVENT_ACCESS_GRANTS,
                 new Document("_id", "grant-legacy").append("customPermissions", List.of("EVENT_MANAGE_ACCESS", "REFUND_ISSUE")));
-        insert(IdentityCollections.PERMISSIONS, new Document("_id", "p1").append("name", "EVENT_CREATE"));
-        insert(IdentityCollections.ROLE_PERMISSIONS, new Document("_id", "r1"));
+        insert("identity_permissions", new Document("_id", "p1").append("name", "EVENT_CREATE"));
+        insert("identity_role_permissions", new Document("_id", "r1"));
         insert("identity_role_permission_changes", new Document("_id", "c1"));
 
         @SuppressWarnings("unchecked")
@@ -121,12 +121,14 @@ class PermissionModelMigrationTest {
         migration.migrate().block();
 
         ReactiveMongoRepositoryFactory factory = new ReactiveMongoRepositoryFactory(template);
+        var clock = TestClock.frozenAt(Instant.parse("2026-09-18T10:00:00Z"));
+        var memberRepository = factory.getRepository(OrganizationMemberRepository.class);
+        var grantRepository = factory.getRepository(EventAccessGrantRepository.class);
         PermissionResolutionServiceImpl resolution = new PermissionResolutionServiceImpl(
-                factory.getRepository(UserRepository.class),
-                factory.getRepository(OrganizationMemberRepository.class),
-                factory.getRepository(OrganizationRepository.class),
-                factory.getRepository(EventAccessGrantRepository.class),
-                TestClock.frozenAt(Instant.parse("2026-09-18T10:00:00Z")));
+                new com.pml.identity.authorization.DecisionContextLoader(
+                        factory.getRepository(UserRepository.class), memberRepository,
+                        factory.getRepository(OrganizationRepository.class), grantRepository, clock),
+                memberRepository, grantRepository, clock);
 
         assertThat(resolution.hasOrganizationPermission("user-manager", "org-legacy", Permission.FINANCIAL_VIEW).block()).isTrue();
         assertThat(resolution.hasOrganizationPermission("user-manager", "org-legacy", Permission.TEAM_INVITE).block())
@@ -152,7 +154,7 @@ class PermissionModelMigrationTest {
         PermissionModelMigrationService.Result result = migration.migrate().block();
 
         List<String> names = template.getCollectionNames().collectList().block();
-        assertThat(names).doesNotContain(IdentityCollections.PERMISSIONS, IdentityCollections.ROLE_PERMISSIONS,
+        assertThat(names).doesNotContain("identity_permissions", "identity_role_permissions",
                 "identity_role_permission_changes");
         assertThat(result.collectionsDropped()).isEqualTo(3);
     }

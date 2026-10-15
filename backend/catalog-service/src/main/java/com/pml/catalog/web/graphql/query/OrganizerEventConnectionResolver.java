@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.service.OrganizerEventFeed;
@@ -13,7 +15,6 @@ import com.pml.catalog.web.graphql.query.OrganizerEventQueryResolver.OrganizerEv
 import com.pml.shared.error.FieldViolation;
 import com.pml.shared.error.ValidationRefusal;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -26,7 +27,7 @@ public class OrganizerEventConnectionResolver {
     private final OrganizerEventFeed feed;
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_VIEW)
     public Mono<EventConnection> myEventsConnection(@InputArgument OrganizerEventFilterInput filter,
                                                     @InputArgument CursorPaginationInput pagination) {
         CursorPaginationInput page = pagination != null ? pagination : new CursorPaginationInput();

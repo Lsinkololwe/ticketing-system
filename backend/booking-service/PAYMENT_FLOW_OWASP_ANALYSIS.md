@@ -592,7 +592,7 @@ PaymentCompletedEvent
          ▼
 ┌────────────────────────────────────────────────────────────┐
 │ Step 6: Publish TicketPurchasedEvent                       │
-│         (For external systems via Azure Service Bus)       │
+│         (For external systems via RabbitMQ)             │
 └────────────────────────────────────────────────────────────┘
 ```
 

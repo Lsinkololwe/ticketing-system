@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.domain.model.ApprovalEscalation;
@@ -14,7 +16,6 @@ import com.pml.catalog.service.PlatformConfigurationService;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 /**
@@ -42,7 +43,7 @@ public class ApprovalWorkflowQueryResolver {
     // ==========================================
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_VIEW)
     public Mono<PlatformConfiguration> platformConfiguration() {
         log.debug("GraphQL query: platformConfiguration");
         return configurationService.getConfiguration();
@@ -53,14 +54,14 @@ public class ApprovalWorkflowQueryResolver {
     // ==========================================
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalTimeline> approvalTimeline(@InputArgument String eventId) {
         log.debug("GraphQL query: approvalTimeline(eventId={})", eventId);
         return timelineService.findByEventId(eventId);
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalTimelineOffsetPage> approvalTimelines(
             @InputArgument ApprovalTimelineFilterInput filter,
             @InputArgument OffsetPaginationInput pagination) {
@@ -69,7 +70,7 @@ public class ApprovalWorkflowQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalTimelineOffsetPage> approvalTimelinesByOrganizer(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination) {
@@ -78,7 +79,7 @@ public class ApprovalWorkflowQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalTimelineOffsetPage> pendingApprovalTimelines(
             @InputArgument OffsetPaginationInput pagination) {
         log.debug("GraphQL query: pendingApprovalTimelines");
@@ -86,7 +87,7 @@ public class ApprovalWorkflowQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalTimelineOffsetPage> overdueApprovalTimelines(
             @InputArgument OffsetPaginationInput pagination) {
         log.debug("GraphQL query: overdueApprovalTimelines");
@@ -97,14 +98,14 @@ public class ApprovalWorkflowQueryResolver {
     // ==========================================
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalEscalation> approvalEscalation(@InputArgument String id) {
         log.debug("GraphQL query: approvalEscalation(id={})", id);
         return escalationService.findById(id);
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalEscalationOffsetPage> activeEscalations(
             @InputArgument OffsetPaginationInput pagination) {
         log.debug("GraphQL query: activeEscalations");
@@ -116,7 +117,7 @@ public class ApprovalWorkflowQueryResolver {
      * adminId is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalEscalationOffsetPage> myEscalations(
             @InputArgument OffsetPaginationInput pagination) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -128,7 +129,7 @@ public class ApprovalWorkflowQueryResolver {
     // ==========================================
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<ApprovalStats> approvalStats() {
         log.debug("GraphQL query: approvalStats");
         return workflowService.getApprovalStats();

@@ -50,6 +50,22 @@ export class TokenManager {
     return this.forSession(s);
   }
 
+  /**
+   * Exchanges the refresh token now even though the access token is still fresh, so a change made to
+   * the person's roles on the server (an organization approved, a role granted) is in the token the
+   * next call carries. It shares the single-flight machinery, so a forced refresh and a due one
+   * never present the same refresh token twice.
+   */
+  async forceRefresh(cookieValue: string | null | undefined): Promise<TokenResult> {
+    const s = await this.sessions.load(cookieValue);
+    if (!s) return { ok: false, reason: 'NO_SESSION' };
+    const existing = this.inflight.get(s.hash);
+    if (existing) return existing;
+    const p = this.refreshAcrossProcesses(s, true).finally(() => this.inflight.delete(s.hash));
+    this.inflight.set(s.hash, p);
+    return p;
+  }
+
   forSession(s: LoadedSession): Promise<TokenResult> {
     if (this.fresh(s.record)) return Promise.resolve({ ok: true, accessToken: s.record.accessToken, session: s });
     const existing = this.inflight.get(s.hash);
@@ -59,7 +75,7 @@ export class TokenManager {
     return p;
   }
 
-  private async refreshAcrossProcesses(s: LoadedSession): Promise<TokenResult> {
+  private async refreshAcrossProcesses(s: LoadedSession, force = false): Promise<TokenResult> {
     const lockKey = `${this.sessions.prefix}lock:refresh:${s.hash}`;
     const deadline = Date.now() + this.waitMs;
     for (;;) {
@@ -73,7 +89,7 @@ export class TokenManager {
       }
       if (got) {
         try {
-          return await this.refreshLocked(s.hash);
+          return await this.refreshLocked(s.hash, force ? s.record.rtVer : null);
         } finally {
           await this.sessions.store.delIfEquals(lockKey, owner).catch(() => undefined);
         }
@@ -81,18 +97,22 @@ export class TokenManager {
       await sleep(this.pollMs);
       const cur = await this.sessions.reload(s.hash).catch(() => null);
       if (!cur) return { ok: false, reason: 'SESSION_ENDED' };
-      if (cur.record.rtVer !== s.record.rtVer || this.fresh(cur.record)) {
+      if (cur.record.rtVer !== s.record.rtVer || (!force && this.fresh(cur.record))) {
         return { ok: true, accessToken: cur.record.accessToken, session: cur };
       }
       if (Date.now() >= deadline) return { ok: false, reason: 'REFRESH_BUSY' };
     }
   }
 
-  private async refreshLocked(hash: string): Promise<TokenResult> {
+  private async refreshLocked(hash: string, forcedFromVersion: number | null = null): Promise<TokenResult> {
     let cur = await this.sessions.reload(hash);
     if (!cur) return { ok: false, reason: 'SESSION_ENDED' };
     // Double check: another node may have refreshed between our read and the lock.
-    if (this.fresh(cur.record)) return { ok: true, accessToken: cur.record.accessToken, session: cur };
+    // A forced refresh is satisfied by any rotation that happened since it was asked for.
+    const rotated = forcedFromVersion !== null && cur.record.rtVer !== forcedFromVersion;
+    if (forcedFromVersion === null ? this.fresh(cur.record) : rotated) {
+      return { ok: true, accessToken: cur.record.accessToken, session: cur };
+    }
     const rt = cur.record.refreshToken;
     if (!rt) {
       await this.sessions.destroyHash(hash).catch(() => undefined);

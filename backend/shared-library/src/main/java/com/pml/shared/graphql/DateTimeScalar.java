@@ -53,9 +53,13 @@ public class DateTimeScalar implements Coercing<Instant, String> {
             // Domain LocalDateTime values are stored/interpreted as UTC.
             return ldt.toInstant(ZoneOffset.UTC).toString();
         }
+        if (dataFetcherResult instanceof java.time.LocalDate date) {
+            // A calendar date is the start of that day in UTC, the same reading the input side gives a date.
+            return date.atStartOfDay(ZoneOffset.UTC).toInstant().toString();
+        }
         throw new CoercingSerializeException(
-                "Expected a temporal type (Instant, OffsetDateTime, ZonedDateTime or "
-                        + "LocalDateTime) but was: " + dataFetcherResult.getClass().getName());
+                "Expected a temporal type (Instant, OffsetDateTime, ZonedDateTime, "
+                        + "LocalDateTime or LocalDate) but was: " + dataFetcherResult.getClass().getName());
     }
 
     @Override

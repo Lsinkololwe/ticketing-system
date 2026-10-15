@@ -25,7 +25,7 @@ export function AuditTab() {
   const staff = useStaff();
   // The server decides what is returned; this only says so. Administrators read the whole trail,
   // finance reads the money view of it.
-  const wholeTrail = staff.roles.some((r) => r === 'ADMIN' || r === 'SUPER_ADMIN');
+  const wholeTrail = staff.permissions.includes('user:view');
   const [detail, setDetail] = useState<AuditLogRow | null>(null);
   const { entries, pageInfo, loading, error, refetch } = useAuditLogs({ action, resourceType, resourceId, page, size: 20 });
 

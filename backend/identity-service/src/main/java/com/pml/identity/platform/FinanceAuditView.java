@@ -43,6 +43,8 @@ import java.util.stream.Collectors;
  *   <li>{@code STAFF_PERMISSION_GRANT_READ}: a role carrying a permission on an organizer's data; it
  *       spans attendees, events and gate work as much as money, so it would bring in rows that are not
  *       money.</li>
+ *   <li>{@code PROMO_CODE_MANAGE}: staff creating or changing an organization's promo codes; a
+ *       commercial setting, and the discount it grants shows in the sale it applies to, not here.</li>
  *   <li>{@code LIFECYCLE_WORKFLOW}, {@code EVENT_COMPLETION}, {@code FINANCE_WORKFLOW},
  *       {@code REFUND_WORKFLOW}: system reaches, which are written to the service log and never as
  *       audit rows, so there is nothing to show.</li>

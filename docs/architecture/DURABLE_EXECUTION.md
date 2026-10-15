@@ -40,7 +40,7 @@ flowchart LR
   end
 
   MDB[(MongoDB<br/>system of record + *_outbox)]
-  SB{{Azure Service Bus<br/>facts between services}}
+  SB{{RabbitMQ<br/>facts between services}}
   SCH([Schedules<br/>recon x4, group-mirror-repair])
 
   GW --> ID & BK & CT
@@ -89,7 +89,7 @@ other registry row marked `planned` has no implementation yet.
 |---|---|---|
 | **Temporal** | each process's history, current step, timers, task queues, Schedules | the record — screens, reports and reconciliation never read workflow state |
 | **MongoDB** | every business document and each service's `*_outbox` — the system of record | workflow history |
-| **Service Bus** | facts between services (`catalog.EventCompleted`, `booking.TicketPurchased`, …) | a service's own next step |
+| **RabbitMQ** | facts between services (`catalog.EventCompleted`, `booking.TicketPurchased`, …) | a service's own next step |
 
 - **Workflows decide; activities do.** Workflow code holds sequence, timers, retries and
   compensation. Activities are the only code that writes MongoDB or calls PawaPay, Keycloak or

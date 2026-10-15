@@ -17,14 +17,14 @@ it stopped. The work a process does — writing MongoDB, staging an outbox envel
 or Keycloak — is an **activity**: ordinary Spring code, retried by the server, and idempotent by
 construction.
 
-MongoDB stays the system of record. Service Bus stays the broadcast layer for the ET-PLT-003 facts.
+MongoDB stays the system of record. The broker (RabbitMQ) stays the broadcast layer for the ET-PLT-003 facts.
 Temporal replaces the hand-rolled sagas, `@Scheduled` sweeps, Redis sweep locks and in-memory event
 chains that today try to be a process engine and cannot promise what one promises.
 
 ## 2. Design decisions
 
 **Workflows decide, activities do.** Workflow code holds sequence, timers, retries and
-compensation. It never touches MongoDB, Redis, Service Bus, a provider or the wall clock, because
+compensation. It never touches MongoDB, Redis, the broker, a provider or the wall clock, because
 it is replayed: anything non-deterministic read during the first run reads differently on replay
 and the history no longer matches. Every such call is an activity.
 
@@ -37,7 +37,7 @@ A retried activity finds the status already moved and returns what is stored.
 happens in an activity. No resolver saves a document and then starts a workflow, because that is
 the dual write the outbox exists to remove, reintroduced between two stores.
 
-**Service Bus carries facts, Temporal carries processes.** A cross-service fact still leaves
+**The broker carries facts, Temporal carries processes.** A cross-service fact still leaves
 through the outbox and a topic. The receiving consumer turns it into a start or signal and does
 nothing else. Temporal cannot replace topic fan-out without every publisher holding a recipient
 list.
@@ -122,7 +122,7 @@ thread only.
 
 ### ET-PLT-015-R6 · Facts and callbacks become starts or signals, carrying their originating id
 
-WHEN a Service Bus consumer or a provider webhook reaches a process, THE SYSTEM SHALL translate it
+WHEN a broker consumer or a provider webhook reaches a process, THE SYSTEM SHALL translate it
 into one signal-with-start or signal carrying the envelope's `eventId` or the provider's reference,
 and SHALL checkpoint only after Temporal accepts it.
 

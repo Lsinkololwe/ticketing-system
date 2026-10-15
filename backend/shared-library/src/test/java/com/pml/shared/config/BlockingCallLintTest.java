@@ -89,8 +89,14 @@ class BlockingCallLintTest {
             // activity executor, a bounded pool sized by `capacity.max-concurrent-activity-executors`,
             // never on a Netty event loop; the activity method is synchronous by contract, so the
             // reactive call it adapts has to be awaited there.
+            //
+            // @RabbitListener is exempt as well. A message-listener container runs each handler on a thread of
+            // its own, never on a Netty event loop, and waiting there is what makes the acknowledgement follow
+            // the outcome: the message is acknowledged, or rejected to its dead-letter queue, only once the
+            // handling has settled. The thread count is the container factory's, so the pool is bounded.
             "@Scheduled\\b"
                     + "|@ActivityImpl\\b"
+                    + "|@RabbitListener\\b"
                     + "|implements\\s+[^{]*\\b(ApplicationRunner|CommandLineRunner)\\b"
                     + "|@EventListener\\s*\\(\\s*ApplicationReadyEvent\\.class\\s*\\)");
 

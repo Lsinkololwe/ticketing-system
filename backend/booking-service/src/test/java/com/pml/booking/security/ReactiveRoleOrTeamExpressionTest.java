@@ -25,18 +25,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * "Holds the role, or belongs to the organizer's team" has to be ONE reactive expression. The
+ * "Holds the permission, or belongs to the organizer's team" has to be ONE reactive expression. The
  * original {@code hasRole(..) or @organizationSecurityService.isOrganizerOrTeamMember(..)} made
  * every organizer-side query fail with ConverterNotFoundException (MonoJust to Boolean) under
  * reactive method security. This runs the real expression, through the real advisor.
  */
 @Tag("L1")
 @Tag("ET-FIN-001")
-@DisplayName("ET-FIN-001 · role-or-team @PreAuthorize expressions evaluate under reactive method security")
+@DisplayName("ET-FIN-001 · permission-or-team @PreAuthorize expressions evaluate under reactive method security")
 class ReactiveRoleOrTeamExpressionTest {
 
     static class Target {
-        @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN,FINANCE', #organizerId)")
+        @PreAuthorize("@organizationSecurityService.permissionOrTeamMember(authentication, 'payout:view', #organizerId)")
         public Mono<String> read(String organizerId) {
             return Mono.just("rows");
         }
@@ -66,7 +66,7 @@ class ReactiveRoleOrTeamExpressionTest {
     }
 
     @Test
-    @DisplayName("an administrator and the organizer themselves are admitted; a stranger is refused, not crashed")
+    @DisplayName("a holder of the permission and the organizer themselves are admitted; a stranger is refused, not crashed")
     void admitsRoleAndSelfRefusesStranger() {
         try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext(Config.class)) {
             Target target = ctx.getBean(Target.class);

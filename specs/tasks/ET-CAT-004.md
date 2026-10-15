@@ -57,5 +57,5 @@ inventory commit, release and restore now move it, and the tier mirror recompute
 - [x] Organizer event list by cursor — `OrganizerEventFeedTest`
 - [x] Event sales totals and the organization's counts — `InventoryEventTotalsTest`, `EventRankingTest`
 - [x] Registry rows added: `catalog_media`, nine indexes, `EventPublishScheduleWorkflow`, `MEDIA_UNKNOWN`, `MEDIA_STATE_INVALID`
-- [ ] Presigned upload flow for images over 5 MB — deferred
-- [ ] Spec `status:` → `implemented`
+- [x] Presigned upload flow for images over 5 MB — `MediaLargeUploadTest` (real MongoDB and a real S3-compatible object store: presigned PUT, bytes decide, wrong size, script as PNG, foreign/forged/expired token, idempotent completion, cap, stock), `MediaUploadTargetControllerTest`, `MediaPickerField` and `sendToGrant` Vitest
+- [ ] Spec `status:` → `implemented` — every row above is ticked; the status waits on its blockers ET-CAT-001, 002 and 003, which are still `approved` (`SpecStatusLintTest.blockersAreBuiltFirst`)

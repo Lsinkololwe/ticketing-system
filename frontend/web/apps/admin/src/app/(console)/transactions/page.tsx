@@ -9,7 +9,7 @@ import { useStaff } from '@/components/console/StaffContext';
 export default function TransactionsIndex() {
   const staff = useStaff();
   const router = useRouter();
-  const first = tabsFor(staff.roles, 'transactions')[0];
+  const first = tabsFor(staff.permissions, 'transactions')[0];
   useEffect(() => {
     router.replace(first ? `/transactions/${first.id}` : '/dashboard');
   }, [first, router]);

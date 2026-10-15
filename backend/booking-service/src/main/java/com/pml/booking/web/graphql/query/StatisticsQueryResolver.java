@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.service.FinancialReportService;
@@ -38,7 +40,7 @@ public class StatisticsQueryResolver {
      * frontend's single PendingCounts query.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.STATISTICS_VIEW)
     public Mono<BookingPendingCounts> bookingPendingCounts() {
         log.debug("GraphQL query: bookingPendingCounts");
         return pendingApprovalStatsService.getPendingCounts();
@@ -49,7 +51,7 @@ public class StatisticsQueryResolver {
      * Schema: transactionStats(eventId: ID, organizerId: ID): TransactionStats!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.STATISTICS_VIEW)
     public Mono<TransactionStats> transactionStats(
             @InputArgument String eventId,
             @InputArgument String organizerId
@@ -63,7 +65,7 @@ public class StatisticsQueryResolver {
      * Schema: financialReport(filter: FinancialReportFilterInput!): FinancialReport!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.STATISTICS_VIEW)
     public Mono<FinancialReport> financialReport(@InputArgument FinancialReportFilterInput filter) {
         log.debug("GraphQL query: financialReport(startDate={}, endDate={})",
                 filter.startDate(), filter.endDate());
@@ -75,7 +77,7 @@ public class StatisticsQueryResolver {
      * Schema: exportFinancialReport(filter: FinancialReportFilterInput!, format: ExportFormat!): ReportExport!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.REPORT_CREATE)
     public Mono<ReportExport> exportFinancialReport(
             @InputArgument FinancialReportFilterInput filter,
             @InputArgument ExportFormat format
@@ -92,7 +94,7 @@ public class StatisticsQueryResolver {
      * that the requesting user is the event organizer or has admin/finance role.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'report:create', #eventId)")
     public Mono<ReportExport> exportSalesReport(
             @InputArgument String eventId,
             @InputArgument ExportFormat format

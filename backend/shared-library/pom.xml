@@ -91,12 +91,12 @@
             <artifactId>jackson-datatype-jsr310</artifactId>
         </dependency>
 
-        <!-- Spring Cloud Stream (provided) — EventBridge is the one place StreamBridge is
-             called, and it lives here so the rule can be enforced in one file rather than
-             fourteen. The binder itself stays with the services. -->
+        <!-- Spring AMQP (provided) — EventBridge hands envelopes to the broker through one transport,
+             and the transport lives here so the rule can be enforced in one file rather than
+             fourteen. The connection itself (spring-boot-starter-amqp) stays with the services. -->
         <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-stream</artifactId>
+            <groupId>org.springframework.amqp</groupId>
+            <artifactId>spring-rabbit</artifactId>
             <scope>provided</scope>
         </dependency>
 

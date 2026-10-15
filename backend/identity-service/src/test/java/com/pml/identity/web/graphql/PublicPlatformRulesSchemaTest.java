@@ -54,7 +54,8 @@ class PublicPlatformRulesSchemaTest {
                     boolean operation = method.isAnnotationPresent(DgsQuery.class)
                             || method.isAnnotationPresent(DgsMutation.class);
                     boolean guarded = method.isAnnotationPresent(PreAuthorize.class)
-                            || type.isAnnotationPresent(PreAuthorize.class);
+                            || type.isAnnotationPresent(PreAuthorize.class)
+                            || method.isAnnotationPresent(com.pml.shared.security.RequiresPermission.class);
                     if (operation && !guarded) {
                         open.add(method.getName());
                     }

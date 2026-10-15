@@ -3,6 +3,11 @@ package com.pml.identity.web.rest;
 import com.pml.identity.service.AuthorizationService;
 import com.pml.shared.dto.authorization.AuthorizationRequest;
 import com.pml.shared.dto.authorization.AuthorizationResult;
+import com.pml.shared.dto.authorization.BatchAuthorizationRequest;
+import com.pml.shared.dto.authorization.BatchAuthorizationResponse;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import reactor.core.publisher.Flux;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +44,7 @@ import reactor.core.publisher.Mono;
 public class InternalAuthorizationController {
 
     private final AuthorizationService authorizationService;
+    private final MeterRegistry meters;
 
     /**
      * Check if a user is authorized to perform an action.
@@ -49,6 +55,39 @@ public class InternalAuthorizationController {
      * @param request Authorization request
      * @return Authorization result with decision and context
      */
+    /**
+     * Many decisions in one call, answered in the order asked. An entry that cannot be decided is a
+     * refusal in its own slot, never a failure of the batch.
+     */
+    @PostMapping("/check-many")
+    public Mono<BatchAuthorizationResponse> checkMany(@Valid @RequestBody BatchAuthorizationRequest request) {
+        return Flux.fromIterable(request.checks())
+                .flatMapSequential(check -> timed(authorizationService.checkAuthorization(check))
+                        .onErrorResume(error -> {
+                            log.warn("Batch authorization entry failed (denying): {}", error.toString());
+                            return Mono.just(AuthorizationResult.denied("Authorization could not be decided"));
+                        }), 8)
+                .collectList()
+                .map(BatchAuthorizationResponse::new);
+    }
+
+    /** Resolution latency, so the case for a cache is a measured p99 and not a guess (ET-ORG-003 R7). */
+    private Mono<AuthorizationResult> timed(Mono<AuthorizationResult> decision) {
+        return Mono.defer(() -> {
+            Timer.Sample sample = Timer.start(meters);
+            return decision.doFinally(signal -> sample.stop(Timer.builder("identity.authorization.decision")
+                    .description("Time to decide one internal authorization check")
+                    .publishPercentiles(0.5, 0.95, 0.99).register(meters)));
+        });
+    }
+
+    /** The digest of the catalogue this build compiled; other services compare theirs with it. */
+    @GetMapping("/catalogue-fingerprint")
+    public Mono<java.util.Map<String, String>> catalogueFingerprint() {
+        return Mono.just(java.util.Map.of("fingerprint",
+                com.pml.shared.security.PermissionCatalogueFingerprint.compute()));
+    }
+
     @PostMapping("/check")
     public Mono<ResponseEntity<AuthorizationResult>> checkAuthorization(
             @Valid @RequestBody AuthorizationRequest request) {
@@ -57,7 +96,7 @@ public class InternalAuthorizationController {
                 request.getUserId(), request.getRequiredPermission(),
                 request.getEventId(), request.getOrganizationId());
 
-        return authorizationService.checkAuthorization(request)
+        return timed(authorizationService.checkAuthorization(request))
                 .map(result -> {
                     if (result.isAuthorized()) {
                         log.debug("Authorization GRANTED: userId={}, permission={}, source={}",

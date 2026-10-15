@@ -1,6 +1,8 @@
 package com.pml.identity.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.enums.AccessGrantStatus;
@@ -77,7 +79,7 @@ public class OrganizationAdminQueryResolver {
 
     /** Payout accounts on file, with their review state, for the admin finance team. */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.BANK_ACCOUNT_VIEW)
     public Mono<PayoutAccountRecordOffsetPage> bankAccounts(
             @InputArgument PayoutAccountFilterInput filter,
             @InputArgument OffsetPaginationInput pagination) {

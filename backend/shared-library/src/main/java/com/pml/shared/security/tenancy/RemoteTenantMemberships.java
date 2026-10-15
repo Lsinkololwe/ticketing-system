@@ -1,10 +1,9 @@
 package com.pml.shared.security.tenancy;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.pml.shared.security.authorization.IdentityAuthorizationClient;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -18,12 +17,10 @@ import java.util.stream.Collectors;
  */
 public class RemoteTenantMemberships implements TenantMemberships {
 
-    static final String PATH = "/api/internal/authorization/user-organizations";
-
-    private final WebClient identity;
+    private final IdentityAuthorizationClient identity;
 
     public RemoteTenantMemberships(WebClient identity) {
-        this.identity = identity;
+        this.identity = new IdentityAuthorizationClient(identity);
     }
 
     @Override
@@ -32,25 +29,11 @@ public class RemoteTenantMemberships implements TenantMemberships {
             // Not a lookup failure: there is no principal to look up. Permits nothing.
             return Mono.just(Set.of());
         }
-        return identity.get()
-                .uri(uri -> uri.path(PATH).queryParam("userId", subject).build())
-                .retrieve()
-                .bodyToMono(Memberships.class)
-                .map(Memberships::activeOrganizationIds);
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    record Memberships(List<Membership> organizations) {
-        Set<String> activeOrganizationIds() {
-            return organizations == null ? Set.of() : organizations.stream()
-                    .filter(Membership::isActive)
-                    .map(Membership::organizationId)
-                    .filter(id -> id != null && !id.isBlank())
-                    .collect(Collectors.toUnmodifiableSet());
-        }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    record Membership(String organizationId, boolean isActive) {
+        return identity.userOrganizations(subject).map(answer -> answer.organizations() == null ? Set.<String>of()
+                : answer.organizations().stream()
+                        .filter(IdentityAuthorizationClient.Membership::isActive)
+                        .map(IdentityAuthorizationClient.Membership::organizationId)
+                        .filter(id -> id != null && !id.isBlank())
+                        .collect(Collectors.toUnmodifiableSet()));
     }
 }

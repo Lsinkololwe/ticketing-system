@@ -1,6 +1,9 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.pml.catalog.service.EventDiscovery;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.pml.shared.error.FieldViolation;
 import com.pml.shared.error.ValidationRefusal;
 import com.pml.shared.constants.PlatformTime;
@@ -126,7 +129,7 @@ public class EventQueryResolver {
     // ==========================================
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<EventOffsetPage> events(
             @InputArgument EventFilterInput filter,
             @InputArgument OffsetPaginationInput pagination) {
@@ -143,7 +146,7 @@ public class EventQueryResolver {
      * that the requesting user is either the organizer or a team member with access.</p>
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN', #organizerId)")
+    @PreAuthorize("@organizationSecurityService.permissionOrTeamMember(authentication, 'catalog:view', #organizerId)")
     public Mono<EventOffsetPage> draftEvents(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination) {
@@ -155,7 +158,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<EventOffsetPage> pendingApprovalEvents(
             @InputArgument OffsetPaginationInput pagination) {
         log.debug("GraphQL query: pendingApprovalEvents");
@@ -165,7 +168,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<EventOffsetPage> overdueApprovalEvents(
             @InputArgument OffsetPaginationInput pagination) {
         log.debug("GraphQL query: overdueApprovalEvents");
@@ -175,7 +178,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<EventOffsetPage> approvedNotPublishedEvents(
             @InputArgument OffsetPaginationInput pagination) {
         log.debug("GraphQL query: approvedNotPublishedEvents");
@@ -185,7 +188,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<EventOffsetPage> eventsByStatus(
             @InputArgument EventStatus status,
             @InputArgument OffsetPaginationInput pagination) {
@@ -197,7 +200,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<EventOffsetPage> cancelledEvents(
             @InputArgument OffsetPaginationInput pagination) {
         log.debug("GraphQL query: cancelledEvents");
@@ -207,7 +210,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<EventOffsetPage> completedEvents(
             @InputArgument OffsetPaginationInput pagination) {
         log.debug("GraphQL query: completedEvents");
@@ -220,6 +223,7 @@ public class EventQueryResolver {
     // ==========================================
 
     @DgsQuery
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<Integer> eventCount() {
         log.debug("GraphQL query: eventCount");
         return eventService.countAll().map(Long::intValue);
@@ -232,7 +236,7 @@ public class EventQueryResolver {
      * that the requesting user is either the organizer or a team member with access.</p>
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN', #organizerId)")
+    @PreAuthorize("@organizationSecurityService.permissionOrTeamMember(authentication, 'catalog:view', #organizerId)")
     public Mono<Integer> eventCountByOrganizer(@InputArgument String organizerId) {
         log.debug("GraphQL query: eventCountByOrganizer(organizerId={})", organizerId);
         Objects.requireNonNull(organizerId, "Organizer ID is required");
@@ -240,6 +244,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<Integer> eventCountByCategory(@InputArgument String categoryId) {
         log.debug("GraphQL query: eventCountByCategory(categoryId={})", categoryId);
         Objects.requireNonNull(categoryId, "Category ID is required");
@@ -247,6 +252,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<Integer> eventCountByCity(@InputArgument String city) {
         log.debug("GraphQL query: eventCountByCity(city={})", city);
         Objects.requireNonNull(city, "City is required");
@@ -254,6 +260,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<Integer> eventCountByStatus(@InputArgument EventStatus status) {
         log.debug("GraphQL query: eventCountByStatus(status={})", status);
         Objects.requireNonNull(status, "Status is required");
@@ -265,7 +272,7 @@ public class EventQueryResolver {
     // ==========================================
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.ANALYTICS_VIEW)
     public Mono<com.pml.catalog.web.graphql.dto.stats.EventTicketStatistics> eventStatistics(
             @InputArgument String eventId) {
         log.debug("GraphQL query: eventStatistics(eventId={})", eventId);
@@ -276,7 +283,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.ANALYTICS_VIEW)
     public Mono<com.pml.catalog.web.graphql.dto.stats.TicketTierStats> ticketTierStatistics(
             @InputArgument String eventId,
             @InputArgument String tierId) {
@@ -289,7 +296,7 @@ public class EventQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<EventStats> eventStats() {
         log.debug("GraphQL query: eventStats");
         return eventStatsService.getEventStats();
@@ -304,7 +311,7 @@ public class EventQueryResolver {
      * frontend's single PendingCounts query.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATALOG_VIEW)
     public Mono<CatalogPendingCounts> catalogPendingCounts() {
         log.debug("GraphQL query: catalogPendingCounts");
         return pendingApprovalStatsService.getPendingCounts();

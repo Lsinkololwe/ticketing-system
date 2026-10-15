@@ -21,7 +21,7 @@ public class TierAccessMutationResolver {
     private final TierAccessService access;
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('CUSTOMER', 'ORGANIZER', 'ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<TicketTier> unlockTierWithAccessCode(@InputArgument String eventId, @InputArgument String accessCode) {
         return SecurityContextUtils.requireCurrentUserId().flatMap(userId -> access.unlock(eventId, accessCode, userId));
     }

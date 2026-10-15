@@ -107,10 +107,10 @@
 
         <!-- JDBC and PostgreSQL for Event Publication Registry -->
 
-        <!-- Azure Service Bus for cross-service events -->
+        <!-- RabbitMQ for cross-service events -->
         <dependency>
-            <groupId>com.azure.spring</groupId>
-            <artifactId>spring-cloud-azure-stream-binder-servicebus</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
         <!-- Azure Key Vault for secrets management (OWASP A02:2021 Compliance) -->

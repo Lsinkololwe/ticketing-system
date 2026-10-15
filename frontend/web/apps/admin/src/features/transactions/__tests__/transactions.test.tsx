@@ -314,9 +314,9 @@ describe('TransactionsPage', () => {
       expect(push).toHaveBeenLastCalledWith(`/transactions/${n}`);
     });
   });
-  it('finance lead only sees four tabs', () => {
+  it('finance lead sees the five tabs finance permissions reach', () => {
     renderConsole(<TransactionsPage tab="payments" />, { roles: ['FINANCE_LEAD'] });
-    expect(screen.getAllByRole('tab')).toHaveLength(4);
+    expect(screen.getAllByRole('tab')).toHaveLength(5);
   });
   it('renders the lazily loaded reference data tab', () => {
     renderConsole(<TransactionsPage tab="refdata" />);

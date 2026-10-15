@@ -28,7 +28,7 @@ import org.springframework.data.mongodb.repository.config.EnableReactiveMongoRep
  * - A transactional outbox in MongoDB for domain event publication
  *   (com.pml.shared.event.Outbox — there is no Spring Modulith here)
  * - MongoDB Event Publication Registry for transactional outbox
- * - Azure Service Bus for cross-service messaging
+ * - RabbitMQ for cross-service messaging
  *
  * Scaling: 2 pods (moderate traffic, read-heavy workload)
  */

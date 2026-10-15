@@ -2833,27 +2833,27 @@ input UpdateChargebackRecoveryInput @tag(name: "admin") {
 # Tags indicate which clients should include these queries in their operations
 # ============================================================================
 type Query {
-    salesOverTime(eventId: ID!, from: DateTime, to: DateTime, bucket: SalesBucket = DAY): [SalesPoint!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    purchasesByDayAndHour(from: DateTime, to: DateTime, eventId: ID, organizationId: ID): [PurchaseHeatCell!]! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
-    ticketHolderAudience(eventId: ID!, segment: HolderSegment = ALL, ticketTierId: String): Int! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    ticketHolderMessages(eventId: ID!, pagination: OffsetPaginationInput): HolderMessagePage! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    commissionRecords(filter: CommissionFilterInput, pagination: OffsetPaginationInput): CommissionRecordPage! @auth(requires: FINANCE) @tag(name: "admin")
-    gatewaySettlements(filter: GatewaySettlementFilterInput, pagination: OffsetPaginationInput): GatewaySettlementPage! @auth(requires: FINANCE) @tag(name: "admin")
-    paymentAttemptSearch(filter: PaymentAttemptFilterInput, pagination: OffsetPaginationInput): PaymentAttemptOffsetPage! @auth(requires: FINANCE) @tag(name: "admin")
-    stuckTransactions(minutes: Int = 30, pagination: OffsetPaginationInput): PaymentAttemptOffsetPage! @auth(requires: FINANCE) @tag(name: "admin")
-    paymentRiskSummary(windowHours: Int = 24): PaymentRiskSummary! @auth(requires: FINANCE) @tag(name: "admin")
-    dualControlQueue: [RecoveryProposal!]! @auth(requires: FINANCE) @tag(name: "admin")
-    myRecoveryProposals: [RecoveryProposal!]! @auth(requires: FINANCE) @tag(name: "admin")
-    pendingRecoveryProposals: [RecoveryProposal!]! @auth(requires: FINANCE) @tag(name: "admin")
-    transferRecipient(channel: TransferChannel!, value: String!): TransferRecipient @auth(requires: CUSTOMER) @tag(name: "mobile")
-    myTicketTransfers(direction: TransferDirection, status: TicketTransferStatus, pagination: OffsetPaginationInput): TicketTransferPage! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    salesOverTime(eventId: ID!, from: DateTime, to: DateTime, bucket: SalesBucket = DAY): [SalesPoint!]! @tag(name: "organizer")
+    purchasesByDayAndHour(from: DateTime, to: DateTime, eventId: ID, organizationId: ID): [PurchaseHeatCell!]! @tag(name: "organizer") @tag(name: "admin")
+    ticketHolderAudience(eventId: ID!, segment: HolderSegment = ALL, ticketTierId: String): Int! @tag(name: "organizer")
+    ticketHolderMessages(eventId: ID!, pagination: OffsetPaginationInput): HolderMessagePage! @tag(name: "organizer")
+    commissionRecords(filter: CommissionFilterInput, pagination: OffsetPaginationInput): CommissionRecordPage! @tag(name: "admin")
+    gatewaySettlements(filter: GatewaySettlementFilterInput, pagination: OffsetPaginationInput): GatewaySettlementPage! @tag(name: "admin")
+    paymentAttemptSearch(filter: PaymentAttemptFilterInput, pagination: OffsetPaginationInput): PaymentAttemptOffsetPage! @tag(name: "admin")
+    stuckTransactions(minutes: Int = 30, pagination: OffsetPaginationInput): PaymentAttemptOffsetPage! @tag(name: "admin")
+    paymentRiskSummary(windowHours: Int = 24): PaymentRiskSummary! @tag(name: "admin")
+    dualControlQueue: [RecoveryProposal!]! @tag(name: "admin")
+    myRecoveryProposals: [RecoveryProposal!]! @tag(name: "admin")
+    pendingRecoveryProposals: [RecoveryProposal!]! @tag(name: "admin")
+    transferRecipient(channel: TransferChannel!, value: String!): TransferRecipient @auth(requires: AUTHENTICATED) @tag(name: "mobile")
+    myTicketTransfers(direction: TransferDirection, status: TicketTransferStatus, pagination: OffsetPaginationInput): TicketTransferPage! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
     ticketTransferChain(ticketId: ID!): [TicketTransfer!]! @auth(requires: AUTHENTICATED) @tag(name: "mobile") @tag(name: "organizer") @tag(name: "admin")
     booking(id: ID!): Booking @auth(requires: AUTHENTICATED) @tag(name: "organizer") @tag(name: "mobile") @tag(name: "admin")
     bookingByNumber(bookingNumber: String!): Booking @auth(requires: AUTHENTICATED) @tag(name: "organizer") @tag(name: "mobile") @tag(name: "admin")
-    bookingsByOrganizer(organizationId: ID, filter: BookingFilterInput, pagination: OffsetPaginationInput): BookingOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    bookingsByOrganizer(organizationId: ID, filter: BookingFilterInput, pagination: OffsetPaginationInput): BookingOffsetPage! @tag(name: "organizer") @tag(name: "admin")
     bookingsByBuyer(buyerId: String!, filter: BookingFilterInput, pagination: OffsetPaginationInput): BookingOffsetPage! @auth(requires: AUTHENTICATED) @tag(name: "mobile") @tag(name: "admin")
-    myBookings(filter: BookingFilterInput, pagination: OffsetPaginationInput): BookingOffsetPage! @auth(requires: CUSTOMER) @tag(name: "mobile")
-    refundRequestsByOrganizer(organizationId: ID, filter: RefundRequestFilterInput, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    myBookings(filter: BookingFilterInput, pagination: OffsetPaginationInput): BookingOffsetPage! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
+    refundRequestsByOrganizer(organizationId: ID, filter: RefundRequestFilterInput, pagination: OffsetPaginationInput): RefundRequestOffsetPage! @tag(name: "organizer") @tag(name: "admin")
     # ========================================================================
     # TICKET QUERIES
     # PUBLIC - Single ticket lookup (owner can view their own ticket)
@@ -2896,7 +2896,7 @@ type Query {
     paymentAttemptByAttemptNumber(attemptNumber: String!): PaymentAttempt @tag(name: "admin")
 
     # ADMIN - ET-PAY-001 §4 · every attempt made against one payment intent
-    paymentAttempts(intentId: ID!): [PaymentAttempt!]! @auth(requires: ADMIN) @tag(name: "admin")
+    paymentAttempts(intentId: ID!): [PaymentAttempt!]! @tag(name: "admin")
 
     # ADMIN - Payment attempts by ticket (all attempts for a purchase)
     paymentAttemptsByReservation(reservationId: String!): [PaymentAttempt!]! @tag(name: "admin")
@@ -3136,7 +3136,7 @@ type Query {
     # An event belonging to another organizer answers NO_ESCROW_ACCOUNT rather
     # than refusing, so the query cannot be used to discover whose events exist
     # or what they are holding.
-    payoutEligibility(eventId: ID!): PayoutEligibility! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    payoutEligibility(eventId: ID!): PayoutEligibility! @tag(name: "organizer")
 
     # ========================================================================
     # GATE CHECK-IN (ET-TKT-003)
@@ -3149,15 +3149,15 @@ type Query {
     # gets no check-in row, so the physical admission count is higher than this
     # by exactly `conflicts` of type DUPLICATE_SCAN. That gap is the finding,
     # not an error to be reconciled away.
-    checkInSummary(eventId: ID!): CheckInSummary! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    checkInSummary(eventId: ID!): CheckInSummary! @tag(name: "organizer")
 
     # Most recent admissions, newest first. Bounded at 100 server-side — a gate
     # runs on a venue connection and must never be asked for the whole log.
-    recentCheckIns(eventId: ID!, limit: Int = 25): [CheckIn!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    recentCheckIns(eventId: ID!, limit: Int = 25): [CheckIn!]! @tag(name: "organizer")
 
     # Scans that were refused. For an offline duplicate this is the ONLY record
     # that a second person was admitted.
-    checkInConflicts(eventId: ID!, pagination: OffsetPaginationInput): CheckInConflictPage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    checkInConflicts(eventId: ID!, pagination: OffsetPaginationInput): CheckInConflictPage! @tag(name: "organizer")
 
     # ORGANIZER - Transaction history with pagination
     # organizerId extracted from JWT - OWASP A01:2021 compliance
@@ -3197,7 +3197,7 @@ type Query {
     # another organization's escrow.
     # Guarded by @PreAuthorize on the resolver, not @auth, and deliberately: the directive's
     # hierarchy has ADMIN including ORGANIZER but FINANCE including only AUTHENTICATED, so
-    # `@auth(requires: ORGANIZER)` would refuse the finance team that @PreAuthorize admits.
+    # `` would refuse the finance team that @PreAuthorize admits.
     # Booking enforces with @PreAuthorize throughout; mixing the two on one field is how the
     # two mechanisms come to disagree.
     escrowTransactions(escrowAccountId: String!, pagination: OffsetPaginationInput): EscrowTransactionOffsetPage! @tag(name: "organizer")
@@ -3254,19 +3254,19 @@ type Query {
 # Tags indicate which clients should include these mutations in their operations
 # ============================================================================
 type Mutation {
-    messageTicketHolders(eventId: ID!, input: MessageTicketHoldersInput!): HolderMessage! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    resumePaymentAttempt(depositId: String!): PaymentAttempt! @auth(requires: FINANCE) @tag(name: "admin")
-    retryPaymentAttempts(depositIds: [String!]!): [PaymentRecoveryOutcome!]! @auth(requires: FINANCE) @tag(name: "admin")
-    forceCompletePaymentAttempts(depositIds: [String!]!, reason: String!): RecoveryProposal! @auth(requires: SUPER_ADMIN) @tag(name: "admin")
-    proposeRecoveryAction(input: ProposeRecoveryActionInput!): RecoveryProposal! @auth(requires: FINANCE) @tag(name: "admin")
-    confirmRecoveryAction(proposalId: ID!, reason: String!): RecoveryProposal! @auth(requires: FINANCE) @tag(name: "admin")
-    withdrawRecoveryProposal(proposalId: ID!): RecoveryProposal! @auth(requires: FINANCE) @tag(name: "admin")
-    transferBetweenPlatformAccounts(input: PlatformTransferInput!): PlatformTransferResult! @auth(requires: FINANCE) @tag(name: "admin")
-    updateChargebackRecovery(id: ID!, input: UpdateChargebackRecoveryInput!): ChargebackRecord! @auth(requires: FINANCE) @tag(name: "admin")
-    initiateTicketTransfer(input: InitiateTicketTransferInput!): TicketTransfer! @auth(requires: CUSTOMER) @tag(name: "mobile")
-    cancelTicketTransfer(transferId: ID!): TicketTransfer! @auth(requires: CUSTOMER) @tag(name: "mobile")
-    acceptTicketTransfer(transferId: ID!): Ticket! @auth(requires: CUSTOMER) @tag(name: "mobile")
-    declineTicketTransfer(transferId: ID!): TicketTransfer! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    messageTicketHolders(eventId: ID!, input: MessageTicketHoldersInput!): HolderMessage! @tag(name: "organizer")
+    resumePaymentAttempt(depositId: String!): PaymentAttempt! @tag(name: "admin")
+    retryPaymentAttempts(depositIds: [String!]!): [PaymentRecoveryOutcome!]! @tag(name: "admin")
+    forceCompletePaymentAttempts(depositIds: [String!]!, reason: String!): RecoveryProposal! @tag(name: "admin")
+    proposeRecoveryAction(input: ProposeRecoveryActionInput!): RecoveryProposal! @tag(name: "admin")
+    confirmRecoveryAction(proposalId: ID!, reason: String!): RecoveryProposal! @tag(name: "admin")
+    withdrawRecoveryProposal(proposalId: ID!): RecoveryProposal! @tag(name: "admin")
+    transferBetweenPlatformAccounts(input: PlatformTransferInput!): PlatformTransferResult! @tag(name: "admin")
+    updateChargebackRecovery(id: ID!, input: UpdateChargebackRecoveryInput!): ChargebackRecord! @tag(name: "admin")
+    initiateTicketTransfer(input: InitiateTicketTransferInput!): TicketTransfer! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
+    cancelTicketTransfer(transferId: ID!): TicketTransfer! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
+    acceptTicketTransfer(transferId: ID!): Ticket! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
+    declineTicketTransfer(transferId: ID!): TicketTransfer! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
     resendTicket(ticketId: ID!): ResendTicketResult! @auth(requires: AUTHENTICATED) @tag(name: "organizer") @tag(name: "mobile") @tag(name: "admin")
     # ========================================================================
     # TICKET MUTATIONS
@@ -3284,7 +3284,7 @@ type Mutation {
     # Never errors on a refusal. "Already admitted" happens several times a
     # night and the steward needs to know which refusal it was; the error
     # channel collapses them all into one red box.
-    validateTicket(input: ValidateTicketInput!): ValidationResult! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    validateTicket(input: ValidateTicketInput!): ValidationResult! @tag(name: "organizer")
 
     # Reconcile a batch of offline scans.
     #
@@ -3292,20 +3292,20 @@ type Mutation {
     # uploaded twice — or split across two uploads — always picks the same
     # winner. Duplicates across two offline devices cannot be PREVENTED, only
     # detected here.
-    uploadScans(inputs: [ValidateTicketInput!]!): [ValidationResult!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    uploadScans(inputs: [ValidateTicketInput!]!): [ValidationResult!]! @tag(name: "organizer")
 
     # Annotate a conflict. Never deletes it — the count of duplicate
     # presentations is itself the finding.
-    reviewConflict(id: ID!, note: String!): CheckInConflict! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    reviewConflict(id: ID!, note: String!): CheckInConflict! @tag(name: "organizer")
     # ORGANIZER/ADMIN - Cancel and refund tickets
     # NOTE: processedBy extracted from JWT authentication (OWASP A01:2021 compliance)
-    cancelTicket(ticketNumber: String!, reason: String!): Ticket! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    refundTicket(ticketNumber: String!, reason: String!, amount: BigDecimal): Ticket! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    cancelTicket(ticketNumber: String!, reason: String!): Ticket! @tag(name: "organizer")
+    refundTicket(ticketNumber: String!, reason: String!, amount: BigDecimal): Ticket! @tag(name: "organizer") @tag(name: "admin")
 
     # ADMIN - Administrative ticket operations
-    adminUpdateTicket(ticketId: ID!, input: AdminTicketUpdateInput!): Ticket! @auth(requires: ADMIN) @tag(name: "admin")
-    regenerateTicketQrCode(ticketId: ID!): Ticket! @auth(requires: ADMIN) @tag(name: "admin")
-    bulkCancelTickets(ticketIds: [ID!]!, reason: String!): BulkOperationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    adminUpdateTicket(ticketId: ID!, input: AdminTicketUpdateInput!): Ticket! @tag(name: "admin")
+    regenerateTicketQrCode(ticketId: ID!): Ticket! @tag(name: "admin")
+    bulkCancelTickets(ticketIds: [ID!]!, reason: String!): BulkOperationResponse! @tag(name: "admin")
 
     # ========================================================================
     # REFUND REQUEST MUTATIONS
@@ -3313,16 +3313,16 @@ type Mutation {
     # ========================================================================
 
     # MOBILE - Customer initiates refund request
-    createUserRefundRequest(input: CreateRefundRequestInput!): RefundRequest! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    createUserRefundRequest(input: CreateRefundRequestInput!): RefundRequest! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
     # ADMIN - Admin-initiated refund
-    createAdminRefundRequest(ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal, idempotencyKey: String!): RefundRequest! @auth(requires: FINANCE) @tag(name: "admin")
+    createAdminRefundRequest(ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal, idempotencyKey: String!): RefundRequest! @tag(name: "admin")
     # ADMIN - Refund approval workflow
     # NOTE: Actor IDs (reviewerId, processedBy, etc.) extracted from JWT - OWASP A01:2021
-    approveRefundRequest(refundRequestId: ID!, reviewComments: String, idempotencyKey: String!): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
-    rejectRefundRequest(refundRequestId: ID!, rejectionReason: String!): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
-    processRefundRequest(refundRequestId: ID!): RefundRequest! @auth(requires: ADMIN) @tag(name: "admin")
-    cancelRefundRequest(refundRequestId: ID!, reason: String!): RefundRequest! @auth(requires: CUSTOMER) @tag(name: "mobile") @tag(name: "admin")
-    bulkApproveRefunds(refundRequestIds: [ID!]!): BulkOperationResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    approveRefundRequest(refundRequestId: ID!, reviewComments: String, idempotencyKey: String!): RefundRequest! @tag(name: "admin")
+    rejectRefundRequest(refundRequestId: ID!, rejectionReason: String!): RefundRequest! @tag(name: "admin")
+    processRefundRequest(refundRequestId: ID!): RefundRequest! @tag(name: "admin")
+    cancelRefundRequest(refundRequestId: ID!, reason: String!): RefundRequest! @auth(requires: AUTHENTICATED) @tag(name: "mobile") @tag(name: "admin")
+    bulkApproveRefunds(refundRequestIds: [ID!]!): BulkOperationResponse! @tag(name: "admin")
 
     # ========================================================================
     # PAYMENT ATTEMPT MUTATIONS
@@ -3331,11 +3331,11 @@ type Mutation {
 
     # ADMIN - Add note for audit trail
     # NOTE: author extracted from JWT authentication (OWASP A01:2021 compliance)
-    addPaymentAttemptNote(depositId: String!, note: String!): PaymentAttempt! @auth(requires: ADMIN) @tag(name: "admin")
+    addPaymentAttemptNote(depositId: String!, note: String!): PaymentAttempt! @tag(name: "admin")
 
     # ADMIN - Set review status for investigation
     # NOTE: reviewedBy extracted from JWT authentication (OWASP A01:2021 compliance)
-    setPaymentAttemptReviewStatus(depositId: String!, reviewStatus: String!, notes: String): PaymentAttempt! @auth(requires: ADMIN) @tag(name: "admin")
+    setPaymentAttemptReviewStatus(depositId: String!, reviewStatus: String!, notes: String): PaymentAttempt! @tag(name: "admin")
 
     # ========================================================================
     # ESCROW ACCOUNT MUTATIONS
@@ -3375,8 +3375,8 @@ type Mutation {
     bulkRetryFailedPayouts(payoutRequestIds: [ID!]!, idempotencyKey: String!): BulkPayoutOperationResponse! @tag(name: "admin")
     bulkMarkPayoutsForReview(payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String): BulkPayoutOperationResponse! @tag(name: "admin")
     escalatePayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @tag(name: "admin")
-    holdPayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @auth(requires: FINANCE) @tag(name: "admin")
-    releasePayoutHold(payoutRequestId: ID!, note: String): PayoutRequest! @auth(requires: FINANCE) @tag(name: "admin")
+    holdPayoutRequest(payoutRequestId: ID!, reason: String!): PayoutRequest! @tag(name: "admin")
+    releasePayoutHold(payoutRequestId: ID!, note: String): PayoutRequest! @tag(name: "admin")
 
     # ========================================================================
     # BANK ACCOUNT MUTATIONS
@@ -3401,12 +3401,12 @@ type Mutation {
     # ========================================================================
 
     # MOBILE - Customer checkout flow (userId extracted from JWT for security)
-    reserveTickets(input: ReserveTicketsInput!): TicketReservation! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    reserveTickets(input: ReserveTicketsInput!): TicketReservation! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
     # Starts the mobile-money prompt. Does NOT issue tickets — confirmation
     # follows the provider callback, never a client asserting that it paid
     # (ET-TKT-001 §4). Poll `reservation(id)` until it reads CONFIRMED.
-    payReservation(input: PayReservationInput!): PaymentInitiationResponse! @auth(requires: CUSTOMER) @tag(name: "mobile")
-    cancelReservation(reservationId: ID!): Boolean! @auth(requires: CUSTOMER) @tag(name: "mobile")
+    payReservation(input: PayReservationInput!): PaymentInitiationResponse! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
+    cancelReservation(reservationId: ID!): Boolean! @auth(requires: AUTHENTICATED) @tag(name: "mobile")
     # ADMIN - Force expire stuck reservations
     forceExpireReservation(reservationId: ID!): Boolean! @tag(name: "admin")
 

@@ -1,5 +1,6 @@
 package com.pml.shared.security.tenancy;
 
+import com.pml.shared.security.Authorities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.Ordered;
@@ -45,7 +46,7 @@ public class TenantScopeWebFilter implements WebFilter, Ordered {
     private final PlatformWideAccess platformWideAccess;
 
     public TenantScopeWebFilter(TenantMemberships memberships) {
-        this(memberships, Set.of("ROLE_ADMIN", "ROLE_SUPER_ADMIN"));
+        this(memberships, Set.of(Authorities.ROLE_ADMIN, Authorities.ROLE_SUPER_ADMIN));
     }
 
     public TenantScopeWebFilter(TenantMemberships memberships, Set<String> platformAdminAuthorities) {

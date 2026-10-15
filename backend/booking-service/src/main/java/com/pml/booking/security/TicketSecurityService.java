@@ -67,4 +67,20 @@ public class TicketSecurityService {
         }
         return null;
     }
+
+    /** Holds the permission on the platform, or owns the ticket. */
+    public Mono<Boolean> permissionOrTicketOwner(Authentication authentication, String permissionCode, String ticketId) {
+        if (com.pml.shared.security.PermissionGuards.holdsPermission(authentication, permissionCode)) {
+            return Mono.just(true);
+        }
+        return isTicketOwner(ticketId, authentication);
+    }
+
+    /** Holds the permission on the platform, or owns the ticket with this number. */
+    public Mono<Boolean> permissionOrTicketOwnerByNumber(Authentication authentication, String permissionCode, String ticketNumber) {
+        if (com.pml.shared.security.PermissionGuards.holdsPermission(authentication, permissionCode)) {
+            return Mono.just(true);
+        }
+        return isTicketOwnerByNumber(ticketNumber, authentication);
+    }
 }

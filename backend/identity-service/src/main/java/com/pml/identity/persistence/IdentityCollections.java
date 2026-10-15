@@ -39,15 +39,8 @@ public final class IdentityCollections {
     /** Event-level role overrides */
     public static final String EVENT_ACCESS_GRANTS = "identity_event_access_grants";
 
-    /**
-     * Retired: permissions and role sets are declared in code ({@code com.pml.shared.security.Permission},
-     * {@code OrganizationRole}, {@code EventRole}). No model reads or writes these collections; the
-     * names remain for the migrations that renamed and then dropped them.
-     */
-    public static final String PERMISSIONS = "identity_permissions";
-
-    /** Retired with {@link #PERMISSIONS}. */
-    public static final String ROLE_PERMISSIONS = "identity_role_permissions";
+    /** Read-only projection of the compiled permission catalogue, rewritten on every start */
+    public static final String PERMISSION_CATALOGUE = "identity_permission_catalogue";
 
     /** KYB document metadata and review state */
     public static final String VERIFICATION_DOCUMENTS = "identity_verification_documents";

@@ -14,7 +14,7 @@ import { KpiRow, PollNote, RoleBanner } from './parts';
 
 export function SuperDashboard() {
   const router = useRouter();
-  const { roles } = useStaff();
+  const { permissions } = useStaff();
   const { counts, updatedAt } = useTimedPendingCounts();
   const ranges = useReportRanges();
   const cur = useFinancialReport({ ...ranges.last30, groupBy: 'MONTH' });
@@ -24,7 +24,7 @@ export function SuperDashboard() {
   const health = useServiceHealth();
   const alerts = useSystemAlerts({ status: 'OPEN' });
   const staffList = useStaffAccounts({ size: 50 });
-  const pend = pendingFor(roles, counts);
+  const pend = pendingFor(permissions, counts);
   const total = pend.reduce((a, x) => a + x.count, 0);
 
   return (

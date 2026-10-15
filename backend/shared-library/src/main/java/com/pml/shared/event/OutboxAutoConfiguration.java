@@ -6,7 +6,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -17,19 +16,19 @@ import java.time.Clock;
  * Wires the transactional outbox into a service.
  *
  * <h2>Why this is auto-configuration rather than three copies</h2>
- * Every service needs the same three beans differing only in a collection name and a binding.
+ * Every service needs the same three beans differing only in a collection name and an exchange.
  * Written per service, the third copy is where the interval drifts, or the reclaim is left out,
  * and nothing says so — a drain that never reclaims looks identical to one with nothing to
  * reclaim.
  *
  * <h2>Opt-in by property, not by classpath</h2>
- * A service declares its own collection and binding:
+ * A service declares its own collection and exchange:
  *
  * <pre>{@code
  * platform:
  *   outbox:
  *     collection: identity_outbox
- *     binding: identity-events-out-0
+ *     exchange: identity-events
  * }</pre>
  *
  * <p>No default collection is supplied, deliberately. Guessing one from the application name would
@@ -37,9 +36,9 @@ import java.time.Clock;
  * staged where no drain looks, which is the failure the outbox exists to prevent, reached by a
  * different road.</p>
  */
-@AutoConfiguration
-@ConditionalOnClass({ReactiveMongoTemplate.class, StreamBridge.class})
-@ConditionalOnProperty(prefix = "platform.outbox", name = {"collection", "binding"})
+@AutoConfiguration(after = EventTransportAutoConfiguration.class)
+@ConditionalOnClass({ReactiveMongoTemplate.class, EventTransport.class})
+@ConditionalOnProperty(prefix = "platform.outbox", name = {"collection", "exchange"})
 @EnableConfigurationProperties(OutboxProperties.class)
 @EnableScheduling
 public class OutboxAutoConfiguration {
@@ -54,8 +53,8 @@ public class OutboxAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public EventBridge platformEventBridge(StreamBridge streamBridge, OutboxProperties properties) {
-        return new EventBridge(streamBridge, properties.binding());
+    public EventBridge platformEventBridge(EventTransport transport, OutboxProperties properties) {
+        return new EventBridge(transport, properties.exchange());
     }
 
     /**

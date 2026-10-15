@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>Why the chain is exercised without a running context</h2>
  * {@link WebFilterChainProxy} is what Spring Security installs in a real application; binding it
  * over a probe route runs the same filters, in the same order, against the same decoder — with
- * no Mongo, no Service Bus, and no service main class dragged in. A {@code @SpringBootTest}
+ * no Mongo, no broker, and no service main class dragged in. A {@code @SpringBootTest}
  * would add a container's worth of startup to assert nothing extra about the security chain.
  */
 public final class JwtRejectionContract {

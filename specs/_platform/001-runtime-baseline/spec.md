@@ -192,7 +192,7 @@ environment, and no committed configuration file SHALL contain either.
 
 **Acceptance**
 - [ ] No committed `application*.yml` contains a password, client secret, API token or connection string — every one is `${VAR}` or `${VAR:default-for-dev-only}`
-- [ ] Keycloak's issuer URI, MongoDB's URI, Redis's host, the Azure Service Bus connection string and the PawaPay token are all environment-sourced in every profile
+- [ ] Keycloak's issuer URI, MongoDB's URI, Redis's host, the RabbitMQ host, virtual host and credentials and the PawaPay token are all environment-sourced in every profile
 - [ ] The same built JAR runs in development and production with no rebuild
 - [ ] A service fails fast at startup with a named message when a required variable is absent, rather than defaulting to a wrong endpoint
 - [ ] `docker-resources/` is the only place infrastructure endpoints are enumerated
@@ -278,7 +278,7 @@ Declared once per service in `config/PlatformConfig.java`.
 | `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | all | per-service confidential client |
 | `MONGODB_URI` | all three services | must name a replica set (ET-PLT-002) |
 | `REDIS_HOST`, `REDIS_PORT` | all | |
-| `AZURE_SERVICEBUS_CONNECTION_STRING` | all three services | |
+| `RABBITMQ_HOST`, `RABBITMQ_VHOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` | all three services | no defaults |
 | `PAWAPAY_API_URL`, `PAWAPAY_API_TOKEN` | booking | ET-PAY-001 |
 | `OTP_SERVICE_URL`, `OTP_CLIENT_ID`, `OTP_CLIENT_SECRET` | keycloak-extensions | ET-IDN-001 |
 | `APOLLO_ROUTER_URL` | gateway | |
@@ -294,7 +294,7 @@ name, never a silent fallback.
 |---|---|---|
 | parent and reactor | `com.pml:backend` | [ET-PLT-012](../012-build-topology/) |
 | GraphQL | `graphql-dgs-spring-graphql-starter`, `graphql-dgs-extended-scalars` | `graphql-dgs-platform-dependencies:10.5.0` |
-| bus | `spring-cloud-azure-stream-binder-servicebus` | `spring-cloud-azure-dependencies:5.19.0` |
+| bus | `spring-boot-starter-amqp` | Spring Boot's own BOM |
 | data | `spring-boot-starter-data-mongodb-reactive`, `spring-boot-starter-data-redis-reactive` | Boot parent |
 | web | `spring-boot-starter-webflux` | Boot parent |
 | security | `spring-boot-starter-oauth2-resource-server` | Boot parent |

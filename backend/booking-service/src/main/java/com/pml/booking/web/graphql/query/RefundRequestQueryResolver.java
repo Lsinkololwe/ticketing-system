@@ -1,6 +1,9 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.RefundRequest;
@@ -46,7 +49,7 @@ public class RefundRequestQueryResolver {
      * Schema: refundRequest(id: ID!): RefundRequest
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @refundSecurityService.isRefundRequestOwner(#id, authentication)")
+    @PreAuthorize("@refundSecurityService.permissionOrRefundRequestOwner(authentication, 'refund:view', #id)")
     public Mono<RefundRequest> refundRequest(@InputArgument String id) {
         log.debug("GraphQL query: refundRequest(id={})", id);
         Objects.requireNonNull(id, "Refund request ID is required");
@@ -58,7 +61,7 @@ public class RefundRequestQueryResolver {
      * Schema: refundRequestByRequestId(requestId: String!): RefundRequest
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @refundSecurityService.isRefundRequestOwnerByRequestId(#requestId, authentication)")
+    @PreAuthorize("@refundSecurityService.permissionOrRefundRequestOwnerByRequestId(authentication, 'refund:view', #requestId)")
     public Mono<RefundRequest> refundRequestByRequestId(@InputArgument String requestId) {
         log.debug("GraphQL query: refundRequestByRequestId({})", requestId);
         Objects.requireNonNull(requestId, "Request ID is required");
@@ -73,7 +76,7 @@ public class RefundRequestQueryResolver {
      * Schema: refundRequestsByTicket(ticketId: String!): [RefundRequest!]!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @ticketSecurityService.isTicketOwner(#ticketId, authentication)")
+    @PreAuthorize("@ticketSecurityService.permissionOrTicketOwner(authentication, 'refund:view', #ticketId)")
     public Flux<RefundRequest> refundRequestsByTicket(@InputArgument String ticketId) {
         log.debug("GraphQL query: refundRequestsByTicket({})", ticketId);
         Objects.requireNonNull(ticketId, "Ticket ID is required");
@@ -89,7 +92,7 @@ public class RefundRequestQueryResolver {
      * Schema: refundRequests(filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.REFUND_VIEW)
     public Mono<RefundRequestOffsetPage> refundRequests(
             @InputArgument RefundRequestFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
@@ -109,7 +112,7 @@ public class RefundRequestQueryResolver {
      * Schema: refundRequestsByBuyer(buyerId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or #buyerId == authentication.principal.subject")
+    @PreAuthorize("@permissionGuards.ownerOrPermission(authentication, #buyerId, 'buyer:view')")
     public Mono<RefundRequestOffsetPage> refundRequestsByBuyer(
             @InputArgument String buyerId,
             @InputArgument OffsetPaginationInput pagination
@@ -125,7 +128,7 @@ public class RefundRequestQueryResolver {
      * Schema: refundRequestsByEvent(eventId: String!, pagination: OffsetPaginationInput): RefundRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'refund:view', #eventId)")
     public Mono<RefundRequestOffsetPage> refundRequestsByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
@@ -144,7 +147,7 @@ public class RefundRequestQueryResolver {
      * identity; platform staff may omit the organization and read across all of them.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresTenantPermission(Permission.TICKET_REFUND)
     public Mono<RefundRequestOffsetPage> refundRequestsByOrganizer(
             @InputArgument String organizationId,
             @InputArgument RefundRequestFilterInput filter,
@@ -159,7 +162,7 @@ public class RefundRequestQueryResolver {
      * Schema: pendingRefundRequests(pagination: OffsetPaginationInput): RefundRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.REFUND_VIEW)
     public Mono<RefundRequestOffsetPage> pendingRefundRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
@@ -177,7 +180,7 @@ public class RefundRequestQueryResolver {
      * Schema: calculateRefundAmount(ticketId: String!): RefundCalculation! @tag(name: "mobile")
      */
     @DgsQuery
-    @PreAuthorize("isAuthenticated() and (@ticketSecurityService.isTicketOwner(#ticketId, authentication) or hasAnyRole('ADMIN', 'FINANCE'))")
+    @PreAuthorize("@ticketSecurityService.permissionOrTicketOwner(authentication, 'refund:view', #ticketId)")
     public Mono<RefundCalculation> calculateRefundAmount(@InputArgument String ticketId) {
         log.debug("GraphQL query: calculateRefundAmount({})", ticketId);
         Objects.requireNonNull(ticketId, "Ticket ID is required");
@@ -193,7 +196,7 @@ public class RefundRequestQueryResolver {
      * Schema: isTicketEligibleForRefund(ticketId: String!): Boolean!
      */
     @DgsQuery
-    @PreAuthorize("isAuthenticated() and (@ticketSecurityService.isTicketOwner(#ticketId, authentication) or hasAnyRole('ADMIN', 'FINANCE'))")
+    @PreAuthorize("@ticketSecurityService.permissionOrTicketOwner(authentication, 'refund:view', #ticketId)")
     public Mono<Boolean> isTicketEligibleForRefund(@InputArgument String ticketId) {
         log.debug("GraphQL query: isTicketEligibleForRefund({})", ticketId);
         Objects.requireNonNull(ticketId, "Ticket ID is required");
@@ -219,7 +222,7 @@ public class RefundRequestQueryResolver {
      * Schema: eventRefundSummary(eventId: String!): RefundSummary
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'refund:view', #eventId)")
     public Mono<RefundSummary> eventRefundSummary(@InputArgument String eventId) {
         log.debug("GraphQL query: eventRefundSummary({})", eventId);
         Objects.requireNonNull(eventId, "Event ID is required");

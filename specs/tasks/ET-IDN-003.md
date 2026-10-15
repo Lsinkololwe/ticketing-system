@@ -137,7 +137,7 @@ condition names it.
 Induce a store outage: a payout mutation **refuses**; an event query **succeeds**. Both, in the
 same test, or the split is untested.
 
-### TS-5 · Propagation *(L3, Service Bus)*
+### TS-5 · Propagation *(L3, RabbitMQ)*
 Revocation effective in all three services within 5 s at p99. Assert p99, not a single sample.
 
 ### TS-6 · Triggers *(L3)*

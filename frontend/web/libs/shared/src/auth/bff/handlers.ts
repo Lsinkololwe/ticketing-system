@@ -429,7 +429,33 @@ export function sessionHandler(deps: BffDeps): RouteHandler {
   };
 }
 
-export type AuthAction = 'start' | 'callback' | 'logout' | 'backchannel-logout' | 'stepup' | 'session';
+// ---------------------------------------------------------------------------------------------
+// POST /api/auth/refresh
+// ---------------------------------------------------------------------------------------------
+/**
+ * Re-reads the signed-in person's roles from Keycloak without a sign-out: an organizer whose
+ * application was just approved calls this once so the session carries the new role.
+ */
+export function refreshHandler(deps: BffDeps): RouteHandler {
+  return async (req) => {
+    const ctx = reqCtx(req, deps);
+    if (assertSameOrigin(req, deps.cfg.appOrigin, { requireHeader: false })) return problem(403, 'ORIGIN_REJECTED');
+    const cookie = ctx.cookies.get(deps.names.session) ?? null;
+    const limited = await gate(deps, 'refresh', { ip: ctx.ip, session: cookie ? sha256Hex(cookie) : null });
+    if (limited) return limited;
+    const result = await deps.tokens.forceRefresh(cookie);
+    if (!result.ok) {
+      return new Response(JSON.stringify({ authenticated: false, reason: result.reason }), {
+        status: result.reason === 'NO_SESSION' || result.reason === 'SESSION_ENDED' ? 401 : 503,
+        headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+      });
+    }
+    const p = toPublic(result.session);
+    return json({ authenticated: true, accountId: p.accountId, displayName: p.displayName, roles: p.roles, authTime: p.authTime });
+  };
+}
+
+export type AuthAction = 'start' | 'callback' | 'logout' | 'backchannel-logout' | 'stepup' | 'session' | 'refresh';
 
 export function buildHandlers(deps: BffDeps) {
   const table: Record<AuthAction, RouteHandler> = {
@@ -439,6 +465,7 @@ export function buildHandlers(deps: BffDeps) {
     'backchannel-logout': backchannelLogoutHandler(deps),
     stepup: stepUpHandler(deps),
     session: sessionHandler(deps),
+    refresh: refreshHandler(deps),
   };
   const methods: Record<AuthAction, string[]> = {
     start: ['GET'],
@@ -447,6 +474,7 @@ export function buildHandlers(deps: BffDeps) {
     'backchannel-logout': ['POST'],
     stepup: ['GET', 'POST'],
     session: ['GET'],
+    refresh: ['POST'],
   };
   /** Dispatcher for `app/api/auth/[action]/route.ts`: `export const GET = bff.handlers.GET` etc. */
   const dispatch = async (req: Request, routeCtx: { params: Promise<{ action: string }> | { action: string } }): Promise<Response> => {

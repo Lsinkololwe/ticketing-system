@@ -24,6 +24,8 @@ import org.mockito.Mockito;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import com.pml.shared.security.RequiresPermissionAspect;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authorization.AuthorizationDeniedException;
@@ -69,7 +71,13 @@ class UserResolverAuthorizationTest {
 
     @Configuration
     @EnableReactiveMethodSecurity
+    @EnableAspectJAutoProxy
     static class Beans {
+        @Bean
+        RequiresPermissionAspect permissionAspect() {
+            return new RequiresPermissionAspect();
+        }
+
         @Bean
         UserService users() {
             return Mockito.mock(UserService.class);
@@ -195,18 +203,19 @@ class UserResolverAuthorizationTest {
     // ---- the mutation surface -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("every administrative mutation requires ADMIN or SUPER_ADMIN; the profile mutation requires only a caller")
+    @DisplayName("every administrative mutation requires a catalogue permission; the profile mutation requires only a caller")
     void mutationGuards() {
         for (Method method : UserMutationResolver.class.getDeclaredMethods()) {
             if (method.getAnnotation(DgsMutation.class) == null) {
                 continue;
             }
             PreAuthorize guard = method.getAnnotation(PreAuthorize.class);
-            assertThat(guard).as(method.getName() + " is guarded").isNotNull();
             if (method.getName().equals("updateMyProfile")) {
+                assertThat(guard).isNotNull();
                 assertThat(guard.value()).isEqualTo("isAuthenticated()");
             } else {
-                assertThat(guard.value()).as(method.getName()).contains("ADMIN");
+                assertThat(method.getAnnotation(com.pml.shared.security.RequiresPermission.class))
+                        .as(method.getName() + " requires a catalogue permission").isNotNull();
             }
         }
     }

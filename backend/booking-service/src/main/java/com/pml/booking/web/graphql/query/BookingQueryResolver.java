@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.Booking;
@@ -38,7 +40,7 @@ public class BookingQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresTenantPermission(Permission.ATTENDEE_VIEW)
     public Mono<BookingOffsetPage> bookingsByOrganizer(@InputArgument String organizationId,
                                                        @InputArgument BookingFilterInput filter,
                                                        @InputArgument OffsetPaginationInput pagination) {

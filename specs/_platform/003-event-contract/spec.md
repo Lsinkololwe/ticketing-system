@@ -14,17 +14,17 @@ delivery.
 
 This spec fixes how that delivery works. It draws the line between a service's own steps —
 a transaction, or an activity of a Temporal workflow ([ET-PLT-015](../015-durable-execution/))
-— and the **facts** it tells other services over Azure Service Bus, because the failure this
+— and the **facts** it tells other services over RabbitMQ, because the failure this
 platform cannot survive is a message that was sent about a transaction that then rolled back.
 It declares the envelope every cross-service message carries, the closed registry of every
-wire name the platform publishes, the topics and subscriptions they travel on, the
+wire name the platform publishes, the exchanges and subscriptions they travel on, the
 deduplication every consumer performs because at-least-once delivery is real, and what
 happens to a message that cannot be processed.
 
 The central decision is that **the outbox is a MongoDB collection written by the same
 reactive transaction as the business document**. A write and its intent to publish commit
 together, in one transaction, in one store — which is the only arrangement in which the
-two cannot disagree. A drain then reaches Azure Service Bus after that commit, and a message
+two cannot disagree. A drain then reaches RabbitMQ after that commit, and a message
 the drain never managed to send is still pending when the process restarts. That is the
 transactional outbox pattern with the atomicity actually held rather than asserted, and it
 needs no change-data-capture pipeline to obtain.
@@ -41,10 +41,10 @@ processed lands somewhere an operator can see it.
 | | Within a service | Between services |
 |---|---|---|
 | What moves | the next step of a process | a fact that has already happened |
-| Mechanism | the workflow's next activity, or the rest of one transaction | stage in the outbox, drain to Service Bus |
+| Mechanism | the workflow's next activity, or the rest of one transaction | stage in the outbox, drain to the broker |
 | Durability | Temporal's history; the transaction | the outbox row, then the broker |
 | Guarantee | exactly the workflow's sequence, retried until it lands | at-least-once, dead-lettered on repeated failure |
-| Ordering | the workflow's order | **none**, unless a session key is set |
+| Ordering | the workflow's order | **none**, unless the subscription is ordered |
 | Payload | the activity's typed arguments — ids | the §4 envelope |
 
 A service never tells itself something through an in-memory event: a listener that runs
@@ -73,7 +73,7 @@ workflow that owns the consequence, carrying the envelope's `eventId` so the wor
 redelivery ([ET-PLT-015](../015-durable-execution/) R6). A consumer that runs a multi-step
 process inline is a process with no history and no resume.
 
-**Service Bus carries facts; Temporal carries processes.** A Temporal signal is addressed to
+**The broker carries facts; Temporal carries processes.** A Temporal signal is addressed to
 one execution, so using signals for facts would make every publisher hold a list of recipients
 and every new consumer a change to every publisher. Topic fan-out is what a fact needs. Within
 a process, the reverse holds: a bus message is the wrong way for one step to call the next.
@@ -119,18 +119,24 @@ consumer whose effect is not naturally idempotent, a durable marker in its own w
 workflow's own record of the originating id. Redis alone is a fast path, not a guarantee: a
 Redis eviction must not be able to cause a double credit.
 
-**One topic per publishing service; one subscription per consuming service.**
-`catalog-events`, `booking-events`, `identity-events`, and a subscription named for the
-consumer. A consumer that wants two publishers' events subscribes twice. Filtering happens
-at the subscription with a SQL filter on `eventType`, so a service is not woken by every
-message its neighbour publishes.
+**One topic exchange per publishing service; one queue per consuming service.**
+`catalog-events`, `booking-events`, `identity-events`, and a durable queue
+`<exchange>.<consumer>-sub` for each consumer. A consumer that wants two publishers' events has
+two queues. The routing key is the wire name and a queue is bound once per wire name it
+consumes, so a service is not woken by every message its neighbour publishes. All of it is
+declared in code (`EventTopology`) by every service on startup; declaring is idempotent, so no
+service depends on another having started first.
 
-**Ordering is not assumed, and where it is required it is bought explicitly.** Service Bus
-delivers unordered across a topic. Handlers must be commutative wherever they can be —
-counters use `$inc`, not assignment. Where order genuinely matters, the message sets a
-session id (the aggregate's id) and the subscription is session-enabled, which serialises
-that key and only that key. A workflow receiving facts as signals applies them in its own
-order and needs no session.
+**Ordering is not assumed, and where it is required it is bought explicitly.** A queue with
+several consumers hands messages out of order. Handlers must be commutative wherever they can
+be — counters use `$inc`, not assignment. Where order genuinely matters, the subscription that
+carries the row has a **single active consumer**: one consumer is handed messages at a time, in
+the order they were published. Every message also carries the aggregate's id as its
+`orderingKey` header. The cost is stated, not hidden: the order is kept per *subscription*, not
+per aggregate, so a slow message for one tier delays the others queued behind it. At the
+platform's volume (thousands of messages a day) that is accepted; if it stops being, the
+ordered subscriptions move to partitioned queues keyed on `orderingKey` without changing the
+wire. A workflow receiving facts as signals applies them in its own order and needs nothing.
 
 **No personal data in a cross-service payload.** A payload carries identifiers; the
 consumer resolves what it needs over the graph. A phone number in a message body is a
@@ -143,7 +149,8 @@ copies out of it while debugging — none of which
 - *In-process events between steps of one service.* No durability of their own; a chain of after-commit listeners is a process nobody can resume or inspect.
 - *Temporal signals as the cross-service bus.* Point-to-point by construction; a new consumer becomes a change to every publisher.
 - *One topic for the whole platform.* Every service woken by every message, and a subscription filter as the only thing standing between a catalog deploy and booking's throughput.
-- *Kafka instead of Service Bus.* A better log, and a second broker to run for a platform whose cross-service volume is thousands per day, not millions per second.
+- *Kafka instead of RabbitMQ.* A better log, and a second broker to run for a platform whose cross-service volume is thousands per day, not millions per second. RabbitMQ is already the one broker every project on the development machine shares.
+- *Azure Service Bus.* Used until 2026-10-14 (D-03, replaced by D-62). Its sessions gave per-aggregate ordering; the platform gave that up for one broker, one emulator-free development stack and one client library.
 - *CDC over a MongoDB outbox collection (PDI Phase 3).* See above — a second pipeline for a guarantee already held.
 - *The Java FQN as the wire name.* Makes a package move a breaking change for three services.
 - *Consumers deduplicating in Redis alone.* Correct until an eviction, and the failure mode is a double credit nobody notices for a month.
@@ -168,7 +175,7 @@ the message is delivered, THEN THE SYSTEM SHALL republish it on restart.
 
 ### ET-PLT-003-R2 · Only the drain reaches the bus
 
-THE SYSTEM SHALL publish to Azure Service Bus only from the outbox drain, through `EventBridge`,
+THE SYSTEM SHALL publish to RabbitMQ only from the outbox drain, through `EventBridge`,
 and SHALL NOT call `StreamBridge` from a transaction, a workflow, an activity or a request path.
 
 **Acceptance**
@@ -198,7 +205,7 @@ THE SYSTEM SHALL publish only the wire names in §4, and each SHALL travel on th
 be consumed by the subscriptions that registry names.
 
 **Acceptance**
-- [ ] Every binding `EventBridge` publishes on maps to a §4 topic
+- [ ] Every exchange `EventBridge` publishes on is a §4 exchange, and a publish completes only when the broker has confirmed it
 - [ ] Every `eventType` published is a §4 registry row; no publisher invents one
 - [ ] Every consumer named in a registry row exists, and every consumer that exists is named in a row
 - [ ] Wire names are `{context}.{PastTense}` — a name that will not read as a completed fact fails review
@@ -225,8 +232,8 @@ an alert.
 
 **Acceptance**
 - [ ] No bus consumer rethrows a transient failure — a provider outage is recorded as state or left to the workflow that retries it, never an exception escaping the handler
-- [ ] A consumer whose signal to Temporal cannot be recorded retries within its budget and does not checkpoint the message
-- [ ] Each subscription is configured with `maxDeliveryCount`, exponential backoff and a maximum backoff, all explicit rather than defaulted
+- [ ] A consumer whose signal to Temporal cannot be recorded retries within its budget and does not acknowledge the message
+- [ ] Each consumer's retry budget (attempts, initial backoff, maximum backoff, multiplier) is explicit rather than defaulted, and a message past it is rejected without a requeue into the subscription's dead-letter queue
 - [ ] Dead-lettered messages carry a reason and the failing consumer's name
 - [ ] Dead-letter depth per subscription is exported as a metric and alerts above zero for longer than the configured grace
 - [ ] An operator can list, inspect and replay a dead-lettered message — the operation is specified by [ET-ADM-003](../../admin/003-transaction-recovery/) and this spec guarantees the message is still there to replay
@@ -235,13 +242,13 @@ an alert.
 ### ET-PLT-003-R7 · Order is not assumed, and is bought where it is needed
 
 THE SYSTEM SHALL treat cross-service delivery as unordered, and WHERE a sequence of
-messages about one entity must be applied in order, THE SYSTEM SHALL set a session key.
+messages about one entity must be applied in order, THE SYSTEM SHALL carry its ordering key and route it to a subscription with a single active consumer.
 
 **Acceptance**
-- [ ] Every handler is commutative, or its registry row names the session key that serialises it
-- [ ] Messages requiring order set the session id to the entity's id, and their subscription is session-enabled
-- [ ] Session-enabled subscriptions are the exception and each is justified in the §4 registry's *Ordering* column
-- [ ] A test interleaves two entities' message sequences and asserts neither is blocked by the other
+- [ ] Every handler is commutative, or its registry row names the ordering key that orders it
+- [ ] Messages requiring order carry the entity's id as `orderingKey`, and their subscription has a single active consumer
+- [ ] Ordered subscriptions are the exception and each is justified in the §4 registry's *Ordering* column
+- [ ] A test against a real broker publishes a sequence and asserts the subscription hands it over in publish order; the cost (order is per subscription, not per aggregate) is recorded in §2
 
 ## 4. Model
 
@@ -266,40 +273,42 @@ public record EventEnvelope(String eventId, String eventType, int schemaVersion,
                             String sourceService, Map<String, Object> payload) {}
 ```
 
-### Topics and subscriptions
+### Exchanges and subscriptions
 
-| Topic | Publisher | Subscriptions | Binding |
+| Exchange | Publisher | Queues | Configured as |
 |---|---|---|---|
-| `catalog-events` | catalog-service | `booking-sub`, `identity-sub` | `catalogEvents-out-0` |
-| `booking-events` | booking-service | `catalog-sub`, `identity-sub` | `bookingEvents-out-0` |
-| `identity-events` | identity-service | `catalog-sub`, `booking-sub` | `identityEvents-out-0` |
+| `catalog-events` | catalog-service | `catalog-events.booking-sub`, `catalog-events.identity-sub` | `platform.outbox.exchange` |
+| `booking-events` | booking-service | `booking-events.catalog-sub`, `booking-events.identity-sub` | `platform.outbox.exchange` |
+| `identity-events` | identity-service | `identity-events.catalog-sub`, `identity-events.booking-sub` | `platform.outbox.exchange` |
 
-Each subscription carries a SQL filter on `eventType` naming exactly the rows below that
-it consumes. Each service declares exactly its one output binding.
+Each queue is bound to its exchange once per wire name in the rows below that it consumes, with
+the wire name as the routing key. Each exchange has a dead-letter exchange `<exchange>.dlx`, and
+each queue a dead-letter queue `<queue>.dlq` bounded at 10 000 messages. A queue holds a message
+for at most one hour, then dead-letters it. Each service declares exactly its one exchange.
 
 ### Cross-service event registry — closed
 
 | Wire name | v | Payload identifiers | Consumers | Ordering |
 |---|---|---|---|---|
 | `catalog.EventPublished` | 1 | `eventId`, `organizationId`, `startsAt` | booking → `EventFinanceWorkflow` signal-with-start (open escrow); identity → notify | commutative |
-| `catalog.TicketTierPublished` | 1 | `tierId`, `eventId`, `capacity`, `price`, `currency`, `salesStartAt`, `salesEndAt` | booking → create `booking_tier_inventory` | **session: `tierId`** |
-| `catalog.TicketTierCapacityChanged` | 1 | `tierId`, `eventId`, `newCapacity`, `previousCapacity` | booking → adjust inventory | **session: `tierId`** |
+| `catalog.TicketTierPublished` | 1 | `tierId`, `eventId`, `capacity`, `price`, `currency`, `salesStartAt`, `salesEndAt` | booking → create `booking_tier_inventory` | **ordered by: `tierId`** |
+| `catalog.TicketTierCapacityChanged` | 1 | `tierId`, `eventId`, `newCapacity`, `previousCapacity` | booking → adjust inventory | **ordered by: `tierId`** |
 | `catalog.EventRescheduled` | 1 | `eventId`, `previousStartsAt`, `newStartsAt` | booking → `EventFinanceWorkflow` signal (refund window, hold moved); identity → notify holders | commutative |
 | `catalog.EventCancelled` | 1 | `eventId`, `reason` | booking → `EventFinanceWorkflow` signal (mass refund); identity → notify holders | commutative |
 | `catalog.EventCompleted` | 1 | `eventId`, `completedAt` | booking → `EventFinanceWorkflow` signal (hold, then payout window); identity → notify | commutative |
 | `booking.TicketPurchased` | 1 | `ticketId`, `eventId`, `tierId`, `ownerId`, `quantity` | catalog → sold counters; identity → notify | commutative |
-| `booking.TicketTransferred` | 1 | `ticketId`, `fromUserId`, `toUserId` | identity → notify both | **session: `ticketId`** |
+| `booking.TicketTransferred` | 1 | `ticketId`, `fromUserId`, `toUserId` | identity → notify both | **ordered by: `ticketId`** |
 | `booking.TicketValidated` | 1 | `ticketId`, `eventId`, `validatedBy` | catalog → check-in counters | commutative |
 | `booking.PaymentCompleted` | 1 | `paymentIntentId`, `reservationId`, `userId`, `amount`, `currency` | identity → receipt | commutative |
 | `booking.PaymentFailed` | 1 | `paymentIntentId`, `reservationId`, `userId`, `failureCode` | identity → notify | commutative |
 | `booking.RefundCompleted` | 1 | `refundRequestId`, `ticketId`, `userId`, `amount`, `currency` | catalog → restore counters; identity → notify | commutative |
 | `booking.PayoutCompleted` | 1 | `payoutRequestId`, `organizationId`, `netAmount`, `currency` | identity → notify organizer | commutative |
-| `identity.OrganizationApproved` | 1 | `organizationId`, `ownerId`, `slug` | catalog → may publish events; booking → enable payouts | **session: `organizationId`** |
-| `identity.OrganizationSuspended` | 1 | `organizationId`, `reason` | catalog → unpublish; booking → block payouts | **session: `organizationId`** |
-| `identity.MemberRoleChanged` | 1 | `organizationId`, `userId`, `previousRole`, `newRole` | catalog, booking → invalidate permission cache | **session: `organizationId`** |
-| `identity.MemberRemoved` | 1 | `organizationId`, `userId` | catalog, booking → invalidate permission cache | **session: `organizationId`** |
-| `identity.EventAccessGranted` | 1 | `userId`, `eventId`, `eventRole` | booking → validation authorisation | **session: `eventId`** |
-| `identity.EventAccessRevoked` | 1 | `userId`, `eventId` | booking → validation authorisation | **session: `eventId`** |
+| `identity.OrganizationApproved` | 1 | `organizationId`, `ownerId`, `slug` | catalog → may publish events; booking → enable payouts | **ordered by: `organizationId`** |
+| `identity.OrganizationSuspended` | 1 | `organizationId`, `reason` | catalog → unpublish; booking → block payouts | **ordered by: `organizationId`** |
+| `identity.MemberRoleChanged` | 1 | `organizationId`, `userId`, `previousRole`, `newRole` | catalog, booking → invalidate permission cache | **ordered by: `organizationId`** |
+| `identity.MemberRemoved` | 1 | `organizationId`, `userId` | catalog, booking → invalidate permission cache | **ordered by: `organizationId`** |
+| `identity.EventAccessGranted` | 1 | `userId`, `eventId`, `eventRole` | booking → validation authorisation | **ordered by: `eventId`** |
+| `identity.EventAccessRevoked` | 1 | `userId`, `eventId` | booking → validation authorisation | **ordered by: `eventId`** |
 | `identity.AccountActivated` | 1 | `userId` | none yet | commutative |
 | `identity.AccountSuspended` | 1 | `userId` | none yet (consumers are planned in ET-IDN-004; the broker filters are added with them) | commutative |
 | `identity.AccountDeleted` | 1 | `userId` | none yet (consumers are planned in ET-IDN-004; the broker filters are added with them) | commutative |
@@ -384,9 +393,9 @@ budget is spent. It never throws on a duplicate — a duplicate is a no-op, not 
 | `platform.outbox.batch-size` | `100` | rows per drain pass |
 | `platform.outbox.max-attempts` | `8` | then the row becomes `FAILED` rather than retrying forever |
 | `platform.outbox.sent-retention` | `P7D` | TTL on `SENT` rows, so the collection stays bounded |
-| `…servicebus.bindings.*.consumer.max-delivery-count` | `5` | then dead-letter |
-| `…servicebus.bindings.*.consumer.max-concurrent-calls` | tuned per subscription | |
-| `…servicebus.processor.retry.exponential.max-retries` | `4` | with a bounded maximum backoff |
+| `platform.events.confirm-timeout` | `PT10S` | how long a publish waits for the broker's confirm before the row stays pending |
+| `platform.events.consumer.max-attempts` | `3` | the retry budget, then the message is rejected into the dead-letter queue |
+| `platform.events.consumer.initial-backoff` / `max-backoff` | `500ms` / `10s` | the bounded exponential backoff between attempts |
 
 ## 5. Tasks
 
@@ -411,10 +420,10 @@ budget is spent. It never throws on a duplicate — a duplicate is a no-op, not 
   - parallel-safe: yes — one service per agent
   - depends: T1, T2
 
-- [ ] **T4 · Topics, subscriptions and `eventType` SQL filters**
+- [ ] **T4 · Exchanges, queues and bindings, declared from the registry**
   - requirements: R4
-  - files: `../docker-resources/servicebus/`, `backend/*/src/main/resources/application.yml`
-  - verify: each subscription receives only the rows its §4 filter names
+  - files: `backend/shared-library/.../event/EventTopology.java`, `EventTopologyAutoConfiguration.java`
+  - verify: `EventTopologyTest` (§4 against the declared topology) and `RabbitEventTransportTest` (a real broker routes each row to exactly the queues that bind it)
   - parallel-safe: no — shared infrastructure, coordinate
   - depends: T2
 
@@ -432,10 +441,10 @@ budget is spent. It never throws on a duplicate — a duplicate is a no-op, not 
   - parallel-safe: yes
   - depends: T4
 
-- [ ] **T7 · Session keys on the nine ordered rows; the interleaving test**
+- [ ] **T7 · Ordering keys on the nine ordered rows; the single-active-consumer subscriptions**
   - requirements: R7
-  - files: `EventBridge`, subscription configuration
-  - verify: two entities' sequences interleave without blocking each other
+  - files: `EventBridge`, `EventTopology`
+  - verify: `OrderingKeyTest` (the key each row is ordered on) and `RabbitEventTransportTest` (a sequence arrives in publish order)
   - parallel-safe: no — subscription configuration is shared
   - depends: T4
 

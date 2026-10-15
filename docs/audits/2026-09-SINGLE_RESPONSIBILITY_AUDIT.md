@@ -32,7 +32,7 @@ and config key, with the verdict and its evidence; after-state also `fields.tsv`
 **The deletion rule.** A symbol stayed if any of these held; otherwise it was deleted, together with
 tests that existed only to test it.
 
-1. Reachable from an entry point: a DGS field in `schema.graphqls`, a REST mapping, a Service Bus
+1. Reachable from an entry point: a DGS field in `schema.graphqls`, a REST mapping, a RabbitMQ
    consumer, a Temporal workflow or activity (including handler implementations), a Schedule, a
    runner, a SpEL `@bean.method(...)`, a Resilience4j `fallbackMethod`, an SPI in `META-INF/services`,
    an auto-configuration import, a bean-property accessor.
@@ -306,6 +306,6 @@ A03, A06 and A09 are unaffected.
 - **Boot:** each service's jar started against MongoDB and Temporal (`docker-resources`), `local`
   profile: booking 6.0 s, catalog 3.9 s, identity 6.6 s. Smoke checks: health 200; `/graphql` and
   `/api/internal/**` without a token 401; booking's webhook path reaches its controller; identity
-  `/actuator/env` 401. The Service Bus emulator could not start (port 5672 is held by `dev_rabbitmq`),
+  `/actuator/env` 401. The RabbitMQ emulator could not start (port 5672 is held by `dev_rabbitmq`),
   so broker delivery was not exercised.
 - **Repeatable:** `backend/tools/reachability/README.md`.

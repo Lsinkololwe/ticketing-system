@@ -47,6 +47,8 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import com.pml.shared.security.RequiresPermissionAspect;
 import org.springframework.data.mongodb.repository.support.ReactiveMongoRepositoryFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authorization.AuthorizationDeniedException;
@@ -93,7 +95,13 @@ class StaffUserCreationTest {
 
     @Configuration
     @EnableReactiveMethodSecurity
+    @EnableAspectJAutoProxy
     static class Beans {
+        @Bean
+        RequiresPermissionAspect permissionAspect() {
+            return new RequiresPermissionAspect();
+        }
+
         @Bean
         UserMutationResolver resolver() {
             return new UserMutationResolver(userService, accounts);

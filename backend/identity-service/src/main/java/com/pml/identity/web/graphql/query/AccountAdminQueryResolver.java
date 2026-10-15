@@ -1,5 +1,7 @@
 package com.pml.identity.web.graphql.query;
 
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -46,7 +48,7 @@ public class AccountAdminQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<UserOffsetPage> staffAccounts(@InputArgument String search, @InputArgument UserType role,
                                               @InputArgument OffsetPaginationInput pagination) {
         return reads.staff(search, role).map((List<User> all) -> {
@@ -68,7 +70,7 @@ public class AccountAdminQueryResolver {
      * leaves no row. A caller who holds both an administrator and a finance role reads everything.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.AUDIT_VIEW)
     public Mono<AuditLogEntryOffsetPage> auditLogs(@InputArgument AuditLogFilterInput filter,
                                                    @InputArgument OffsetPaginationInput pagination) {
         return readsWholeTrail().flatMap(administrator -> administrator
@@ -89,7 +91,7 @@ public class AccountAdminQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<List<GrowthPoint>> userGrowthSeries(@InputArgument Instant from, @InputArgument Instant to,
                                                     @InputArgument GrowthBuckets.Bucket bucket,
                                                     @InputArgument UserType role) {

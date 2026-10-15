@@ -43,17 +43,18 @@
 
 import { memo, type ReactNode } from 'react';
 import { useMyPermissions } from '../../api/graphql/shared/permissions/hooks';
+import type { PermissionCode } from '../../generated/permission-codes';
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface PermissionGateProps {
-  /** Single permission to check (string matching backend permission name) */
-  permission?: string;
+  /** Single permission to check; a code that is not in the catalogue is a compile error */
+  permission?: PermissionCode;
 
-  /** Multiple permissions to check (strings matching backend permission names) */
-  permissions?: string[];
+  /** Multiple permissions to check, each a catalogue code */
+  permissions?: PermissionCode[];
 
   /** If true, all permissions are required. If false (default), any permission grants access */
   requireAll?: boolean;
@@ -240,8 +241,8 @@ export const FinanceGate = memo(function FinanceGate({
  * // Using dot notation strings
  * const canCreateEvent = checkPermission("event:create");
  *
- * // Or using Permission constants
- * const canViewFinancials = checkPermission(Permission.FINANCIAL_VIEW);
+ * // Codes are the generated PermissionCode union, so a typo does not compile
+ * const canViewFinancials = checkPermission("financial:view");
  *
  * const handleClick = () => {
  *   if (!canAccess(["event:edit"], true)) {
@@ -272,10 +273,10 @@ export function useAccessControl() {
 
     /**
      * Check if user has access based on permissions
-     * @param permissions Permission name strings to check
+     * @param permissions catalogue codes to check
      * @param requireAll If true, all permissions required
      */
-    canAccess: (permissions: string[], requireAll = false): boolean => {
+    canAccess: (permissions: readonly PermissionCode[], requireAll = false): boolean => {
       if (isLoading) return false;
       return requireAll
         ? hasAllPermissions(permissions)
@@ -335,20 +336,11 @@ interface PermissionLinkProps extends PermissionGateProps {
  *
  * @example
  * ```tsx
- * // Using Permission constant (recommended)
  * <PermissionLink
  *   href="/admin/payouts"
- *   permission={Permission.PAYOUT_VIEW}
+ *   permission="payout:approve"
  * >
  *   Manage Payouts
- * </PermissionLink>
- *
- * // Or using string literal
- * <PermissionLink
- *   href="/admin/events"
- *   permission="event:view"
- * >
- *   View Events
  * </PermissionLink>
  * ```
  */

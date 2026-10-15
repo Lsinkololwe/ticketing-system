@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -9,7 +11,6 @@ import com.pml.booking.service.PaymentAttemptService;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import reactor.core.publisher.Mono;
 
@@ -30,7 +31,7 @@ public class PaymentAttemptMutationResolver {
     private final PaymentAttemptService paymentAttemptService;
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_MANAGE)
     public Mono<PaymentAttempt> addPaymentAttemptNote(
             @InputArgument String depositId,
             @InputArgument String note
@@ -41,7 +42,7 @@ public class PaymentAttemptMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_MANAGE)
     public Mono<PaymentAttempt> setPaymentAttemptReviewStatus(
             @InputArgument String depositId,
             @InputArgument String reviewStatus,

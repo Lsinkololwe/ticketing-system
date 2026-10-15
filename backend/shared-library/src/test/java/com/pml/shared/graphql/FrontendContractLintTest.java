@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Catalog carries {@code @auth(requires: …)} on 102 of its 141 root fields, enforced at runtime
  * by {@link com.pml.shared.graphql.auth.AuthDirective}. Booking and identity carry almost none —
  * identity has <b>zero</b> — and guard at the resolver with Spring Security's
- * {@code @PreAuthorize} instead: 208 of them in booking, 144 in identity.
+ * {@code @PreAuthorize} or {@code @RequiresPermission} instead.
  *
  * <p>The first version of this generator read only the directive. It would have published a
  * contract labelling 372 operations "PUBLIC by omission", among them every payment-attempt query
@@ -508,6 +508,26 @@ class FrontendContractLintTest {
         String declaredField = null;
         for (String line : source.split("\n")) {
             String trimmed = line.trim();
+            if (trimmed.startsWith("@RequiresPermission") || trimmed.startsWith("@RequiresTenantPermission")) {
+                // A catalogue permission guards the method. The contract names the roles that can reach it:
+                // the platform roles that hold the permission and, for a tenant permission, the members of an
+                // organization (the ORGANIZER role), so such an operation is never mistaken for console-only.
+                Matcher permission = Pattern.compile("Permission\\.(\\w+)").matcher(trimmed);
+                if (permission.find()) {
+                    boolean tenant = trimmed.startsWith("@RequiresTenantPermission");
+                    java.util.List<String> roles = new java.util.ArrayList<>(java.util.Arrays.stream(
+                                    com.pml.shared.security.PlatformRole.values())
+                            .filter(role -> role.grants().contains(
+                                    com.pml.shared.security.Permission.valueOf(permission.group(1))))
+                            .map(com.pml.shared.security.PlatformRole::name).toList());
+                    if (tenant && !roles.contains("ORGANIZER")) {
+                        roles.add("ORGANIZER");
+                    }
+                    pending = "hasAnyRole(" + roles.stream().map(r -> "'" + r + "'")
+                            .collect(java.util.stream.Collectors.joining(", ")) + ")";
+                }
+                continue;
+            }
             if (trimmed.startsWith("@PreAuthorize")) {
                 Matcher expression = Pattern.compile("@PreAuthorize\\(\"(.*)\"\\)").matcher(trimmed);
                 pending = expression.find() ? expression.group(1) : null;

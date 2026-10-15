@@ -28,10 +28,10 @@ class OrganizationRoleTest {
     private static final Set<Permission> CONTRIBUTOR_SET = EnumSet.of(
             EVENT_VIEW, ATTENDEE_VIEW, TICKET_SCAN, ORGANIZATION_VIEW, TEAM_VIEW);
 
-    private static final Set<Permission> MARKETER_SET = union(CONTRIBUTOR_SET, ANALYTICS_VIEW, PROMOTION_MANAGE);
+    private static final Set<Permission> MARKETER_SET = union(CONTRIBUTOR_SET, ANALYTICS_VIEW, PROMOTION_MANAGE, MEDIA_MANAGE);
 
     private static final Set<Permission> MANAGER_SET = union(CONTRIBUTOR_SET,
-            EVENT_CREATE, EVENT_EDIT, EVENT_PUBLISH, ANALYTICS_VIEW, PROMOTION_MANAGE);
+            EVENT_CREATE, EVENT_EDIT, EVENT_PUBLISH, ANALYTICS_VIEW, PROMOTION_MANAGE, MEDIA_MANAGE);
 
     private static final Set<Permission> ADMIN_SET = union(union(MANAGER_SET, MARKETER_SET.toArray(Permission[]::new)),
             EVENT_DELETE, EVENT_CANCEL, TICKET_REFUND, TEAM_INVITE, TEAM_REMOVE, TEAM_ROLE, EVENT_ACCESS_GRANT,

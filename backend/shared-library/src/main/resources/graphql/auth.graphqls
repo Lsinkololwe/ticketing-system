@@ -60,10 +60,10 @@ Examples:
   myProfile: User @auth
 
   # Require specific role
-  createEvent(input: CreateEventInput!): Event @auth(requires: ORGANIZER)
+  createEvent(input: CreateEventInput!): Event
 
   # Admin only
-  adminDashboard: Dashboard @auth(requires: ADMIN)
+  adminDashboard: Dashboard
 
   # Explicit public access (same as no @auth)
   events: [Event!]! @auth(requires: PUBLIC)

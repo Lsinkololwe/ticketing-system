@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -12,7 +14,6 @@ import com.pml.catalog.web.graphql.dto.ReferenceDataMutationResponse;
 import com.pml.catalog.web.graphql.dto.UpdateReferenceDataInput;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
@@ -33,7 +34,7 @@ public class ReferenceDataMutationResolver {
     private final ReferenceDataService referenceDataService;
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.REFERENCE_DATA_MANAGE)
     public Mono<ReferenceDataMutationResponse> createReferenceData(
             @Valid @InputArgument CreateReferenceDataInput input) {
         log.info("Creating reference data: type={}, code={}", input.type(), input.code());
@@ -47,7 +48,7 @@ public class ReferenceDataMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.REFERENCE_DATA_MANAGE)
     public Mono<ReferenceDataMutationResponse> updateReferenceData(
             @InputArgument String id,
             @Valid @InputArgument UpdateReferenceDataInput input) {
@@ -69,7 +70,7 @@ public class ReferenceDataMutationResolver {
      * service cannot see those documents to know.
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.REFERENCE_DATA_MANAGE)
     public Mono<String> deleteReferenceData(@InputArgument String id) {
         log.info("Retiring reference data: {}", id);
         // Retired, not removed: the row is deactivated and kept, so anything
@@ -80,7 +81,7 @@ public class ReferenceDataMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.REFERENCE_DATA_MANAGE)
     public Mono<ReferenceDataMutationResponse> setReferenceDataActive(
             @InputArgument String id,
             @InputArgument Boolean active) {

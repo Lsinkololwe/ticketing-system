@@ -1,6 +1,6 @@
 id: ET-PLT-013
 title: The permission engine — flat module:action catalogue, role mapping, evaluation
-status: approved            # draft | approved | in-progress | implemented | verified | deferred | withdrawn
+status: implemented           # draft | approved | in-progress | implemented | verified | deferred | withdrawn
 area: PLT
 service: identity-service
 subgraph: identity
@@ -31,8 +31,7 @@ persistence:
 
 events:
   module: []   # a step within a service is a workflow activity (ET-PLT-015)
-  bus:
-    - identity.RolePermissionsChanged
+  bus: []
   consumes: []
   topics:
     - identity-events

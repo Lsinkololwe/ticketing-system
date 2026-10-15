@@ -75,7 +75,7 @@ export function AllEventsTab() {
   ];
 
   const canFeature = staff.can('featureEvent');
-  const financeOk = canOpenModule(staff.roles, 'finance');
+  const financeOk = canOpenModule(staff.permissions, 'finance');
 
   const toggleFeature = async (e: AdminEventTableRow) => {
     const res = await feature(e.id, !e.featured);

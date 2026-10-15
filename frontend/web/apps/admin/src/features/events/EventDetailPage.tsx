@@ -85,11 +85,11 @@ function Detail({ event, frame }: { event: AdminEventDetail; frame: { module: 'e
   const decisions = useEventDecisions();
   const { config } = usePlatformConfiguration();
   const { timeline } = useEventApprovalTimeline(event.id);
-  const financeOk = canOpenModule(staff.roles, 'finance');
+  const financeOk = canOpenModule(staff.permissions, 'finance');
   const { escrow } = useEventEscrow(event.id, !financeOk);
 
   const pending = event.status === 'PENDING_APPROVAL';
-  const canDecide = staff.can('decide') && canOpenModule(staff.roles, 'approvals');
+  const canDecide = staff.can('decide') && canOpenModule(staff.permissions, 'approvals');
   const canFeature = staff.can('featureEvent');
   const blocked = event.approvalBlockers.length > 0;
   const step = approvalStep(event.status);

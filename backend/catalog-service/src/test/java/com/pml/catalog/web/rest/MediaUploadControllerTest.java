@@ -77,7 +77,8 @@ class MediaUploadControllerTest {
         assertThat(new IndexEnsurer(template).ensure(CatalogIndexInitializer.specifications()).block().isClean()).isTrue();
         Clock clock = Clock.fixed(Instant.parse("2026-10-01T10:00:00Z"), ZoneOffset.UTC);
         service = new MediaService(template, new LocalMediaStorage(files.toString(), "http://cdn.test"), clock,
-                CatalogWiring.categories(template), 500);
+                CatalogWiring.categories(template), 500,
+                new com.pml.catalog.service.MediaUploadTokens("unit-test-upload-signing-key-0123456789", "local", clock));
         identity = new Stub();
         redisFactory = new org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory(
                 com.pml.shared.testing.RedisNode.host(), com.pml.shared.testing.RedisNode.port());

@@ -438,15 +438,41 @@ public class Organization {
         if (permission == null) {
             return false;
         }
+        // Every permission is named, with no default: a permission added to the catalogue does not
+        // compile here until someone says whether the organization's status gates it.
         return switch (permission) {
             // Draft-level authoring — allowed throughout the approval workflow
-            case EVENT_CREATE, EVENT_EDIT, EVENT_DELETE -> canCreateDraftEvents();
+            case EVENT_CREATE, EVENT_EDIT, EVENT_DELETE, MEDIA_MANAGE -> canCreateDraftEvents();
             // Going live — approved/active organizations only
             case EVENT_PUBLISH -> canPublishEvents();
-            // Money movement — approved organizations only
-            case PAYOUT_REQUEST -> isApproved();
-            // Read-only / membership operations are not gated by approval status
-            default -> true;
+            // Money movement and the accounts it goes to — approved organizations only
+            case PAYOUT_REQUEST, BANK_MANAGE -> isApproved();
+            // Read-only, membership and platform-side operations are not gated by approval status
+            case EVENT_VIEW, EVENT_CANCEL, ATTENDEE_VIEW, TICKET_SCAN, TICKET_REFUND, ANALYTICS_VIEW,
+                 PROMOTION_MANAGE, FINANCIAL_VIEW, PAYOUT_APPROVE, TEAM_INVITE, TEAM_REMOVE, TEAM_ROLE,
+                 TEAM_VIEW, EVENT_ACCESS_GRANT, ORGANIZATION_VIEW, ORGANIZATION_EDIT, ORGANIZATION_BILLING,
+                 ORGANIZATION_TRANSFER, ORGANIZATION_DELETE, ORGANIZATION_SUSPEND, ORGANIZATION_APPROVE,
+                 PLATFORM_CONFIGURE, TRANSACTION_RECOVER, AUDIT_VIEW,
+                 // What platform staff do. The status of one organization does not gate them.
+                 LEDGER_VIEW, LEDGER_MANAGE, CHART_OF_ACCOUNTS_MANAGE,
+                 RECONCILIATION_VIEW, RECONCILIATION_MANAGE, ESCROW_VIEW,
+                 ESCROW_MANAGE, CHARGEBACK_VIEW, CHARGEBACK_MANAGE,
+                 CHARGEBACK_RECOVER, PAYMENT_VIEW, PAYMENT_MANAGE,
+                 PAYMENT_APPROVE, PAYOUT_VIEW, PAYOUT_MANAGE,
+                 REFUND_VIEW, REFUND_MANAGE, REFUND_APPROVE,
+                 COMMISSION_VIEW, SETTLEMENT_VIEW, PLATFORM_ACCOUNT_VIEW,
+                 PLATFORM_ACCOUNT_TRANSFER, STATISTICS_VIEW, REPORT_CREATE,
+                 EVENT_REPORT_CREATE, BANK_ACCOUNT_VIEW, BANK_ACCOUNT_APPROVE,
+                 RESERVATION_VIEW, RESERVATION_MANAGE, TICKET_VIEW,
+                 TICKET_MANAGE, BUYER_VIEW, CATALOG_VIEW,
+                 APPROVAL_VIEW, APPROVAL_MANAGE, EVENT_APPROVE,
+                 EVENT_MANAGE, REFERENCE_DATA_MANAGE, LOCATION_MANAGE,
+                 CATEGORY_MANAGE, MEDIA_MODERATION_VIEW, MEDIA_MODERATION_MANAGE,
+                 STOCK_IMAGE_MANAGE, PLATFORM_VIEW, PLATFORM_MANAGE,
+                 USER_VIEW, USER_MANAGE, STAFF_MANAGE,
+                 SESSION_MANAGE, ORGANIZATION_DIRECTORY_VIEW, ORGANIZATION_COMMISSION_CONFIGURE,
+                 ORGANIZATION_MANAGE, PERMISSION_VIEW, KYB_DOCUMENT_VIEW,
+                 KYB_DOCUMENT_APPROVE -> true;
         };
     }
 

@@ -836,6 +836,21 @@ export type CommissionTotals = {
   pending: Scalars['BigDecimal']['output'];
 };
 
+export type CompleteMediaUploadInput = {
+  altText?: InputMaybe<Scalars['String']['input']>;
+  eventId?: InputMaybe<Scalars['ID']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+  uploadToken: Scalars['String']['input'];
+};
+
+export type CompleteStockImageUploadInput = {
+  altText?: InputMaybe<Scalars['String']['input']>;
+  categoryCode?: InputMaybe<Scalars['String']['input']>;
+  purpose: StockImagePurpose;
+  title?: InputMaybe<Scalars['String']['input']>;
+  uploadToken: Scalars['String']['input'];
+};
+
 export type ConfirmContactAddInput = {
   challengeId: Scalars['ID']['input'];
   code: Scalars['String']['input'];
@@ -2045,6 +2060,16 @@ export type MediaStatus =
   | 'FLAGGED'
   | 'REMOVED';
 
+export type MediaUploadTicket = {
+  __typename: 'MediaUploadTicket';
+  expiresAt: Scalars['DateTime']['output'];
+  headers: Array<UploadHeader>;
+  maxBytes: Scalars['Int']['output'];
+  method: Scalars['String']['output'];
+  uploadToken: Scalars['String']['output'];
+  uploadUrl: Scalars['String']['output'];
+};
+
 export type MemberStatus =
   | 'ACTIVE'
   | 'INACTIVE'
@@ -2140,8 +2165,10 @@ export type Mutation = {
   cancelTicketTransfer: TicketTransfer;
   closeEscrowAccount: EventEscrowAccount;
   completeEvent: Event;
+  completeMediaUpload: MediaAsset;
   completePayoutRequest: PayoutRequest;
   completeReconciliation: ReconciliationRun;
+  completeStockImageUpload: StockImage;
   confirmBankVerification: BankAccount;
   confirmContactAdd: ContactChangeResult;
   confirmContactChange: ContactChangeResult;
@@ -2265,6 +2292,7 @@ export type Mutation = {
   requestContactRemoval: ContactCodeSent;
   requestDocumentUploadUrl: DocumentUploadUrlResponse;
   requestEventChanges: Event;
+  requestMediaUpload: MediaUploadTicket;
   /**
    * Request changes to an organization application.
    * Changes status from PENDING_REVIEW to CHANGES_REQUESTED.
@@ -2274,6 +2302,7 @@ export type Mutation = {
   requestOrganizationDeletion: Maybe<Organization>;
   requestOwnershipTransferCode: Scalars['Boolean']['output'];
   requestPrimaryContact: ContactCodeSent;
+  requestStockImageUpload: MediaUploadTicket;
   rescheduleEvent: Event;
   resendContactCode: ContactCodeSent;
   resendInvitation: Maybe<TeamInvitation>;
@@ -2652,6 +2681,11 @@ export type MutationCompleteEventArgs = {
 };
 
 
+export type MutationCompleteMediaUploadArgs = {
+  input: CompleteMediaUploadInput;
+};
+
+
 export type MutationCompletePayoutRequestArgs = {
   bankReference: Scalars['String']['input'];
   payoutRequestId: Scalars['ID']['input'];
@@ -2661,6 +2695,11 @@ export type MutationCompletePayoutRequestArgs = {
 export type MutationCompleteReconciliationArgs = {
   notes: InputMaybe<Scalars['String']['input']>;
   runId: Scalars['ID']['input'];
+};
+
+
+export type MutationCompleteStockImageUploadArgs = {
+  input: CompleteStockImageUploadInput;
 };
 
 
@@ -3183,6 +3222,11 @@ export type MutationRequestEventChangesArgs = {
 };
 
 
+export type MutationRequestMediaUploadArgs = {
+  input: RequestMediaUploadInput;
+};
+
+
 export type MutationRequestOrganizationChangesArgs = {
   id: Scalars['ID']['input'];
   reason: Scalars['String']['input'];
@@ -3202,6 +3246,11 @@ export type MutationRequestOwnershipTransferCodeArgs = {
 
 export type MutationRequestPrimaryContactArgs = {
   contactId: Scalars['ID']['input'];
+};
+
+
+export type MutationRequestStockImageUploadArgs = {
+  input: RequestMediaUploadInput;
 };
 
 
@@ -6879,6 +6928,12 @@ export type RequestContactChangeInput = {
   value: Scalars['String']['input'];
 };
 
+export type RequestMediaUploadInput = {
+  contentType: Scalars['String']['input'];
+  fileName: Scalars['String']['input'];
+  sizeBytes: Scalars['Int']['input'];
+};
+
 export type RequestOrganizationChangesInput = {
   changesRequired: Scalars['String']['input'];
   organizationId: Scalars['ID']['input'];
@@ -7964,6 +8019,12 @@ export type UpdateUserInput = {
   lastName?: InputMaybe<Scalars['String']['input']>;
 };
 
+export type UploadHeader = {
+  __typename: 'UploadHeader';
+  name: Scalars['String']['output'];
+  value: Scalars['String']['output'];
+};
+
 export type UploadMediaInput = {
   altText?: InputMaybe<Scalars['String']['input']>;
   contentBase64: Scalars['String']['input'];
@@ -8597,6 +8658,20 @@ export type OrganizerUploadMediaMutationVariables = Exact<{
 
 export type OrganizerUploadMediaMutation = { __typename: 'Mutation', uploadMedia: { __typename: 'MediaAsset', id: string, url: string, fileName: string, contentType: string, sizeBytes: number, title: string | null, altText: string | null, eventId: string | null, status: MediaStatus, createdAt: string | null } };
 
+export type OrganizerRequestMediaUploadMutationVariables = Exact<{
+  input: RequestMediaUploadInput;
+}>;
+
+
+export type OrganizerRequestMediaUploadMutation = { __typename: 'Mutation', requestMediaUpload: { __typename: 'MediaUploadTicket', uploadToken: string, uploadUrl: string, method: string, expiresAt: string, maxBytes: number, headers: Array<{ __typename: 'UploadHeader', name: string, value: string }> } };
+
+export type OrganizerCompleteMediaUploadMutationVariables = Exact<{
+  input: CompleteMediaUploadInput;
+}>;
+
+
+export type OrganizerCompleteMediaUploadMutation = { __typename: 'Mutation', completeMediaUpload: { __typename: 'MediaAsset', id: string, url: string, fileName: string, contentType: string, sizeBytes: number, title: string | null, altText: string | null, eventId: string | null, status: MediaStatus, createdAt: string | null } };
+
 export type OrganizerUpdateMediaMutationVariables = Exact<{
   id: Scalars['ID']['input'];
   input: UpdateMediaInput;
@@ -8642,6 +8717,13 @@ export type OrganizerMembershipQueryVariables = Exact<{
 
 
 export type OrganizerMembershipQuery = { __typename: 'Query', myOrganizationMembership: { __typename: 'OrganizationMember', id: string, userId: string, role: OrganizationRole, status: MemberStatus, customPermissions: Array<string> | null, deniedPermissions: Array<string> | null } | null };
+
+export type OrganizerPermissionsQueryVariables = Exact<{
+  organizationId: Scalars['ID']['input'];
+}>;
+
+
+export type OrganizerPermissionsQuery = { __typename: 'Query', myEffectivePermissions: { __typename: 'EffectivePermissions', permissions: Array<string> } };
 
 export type OrganizerPlatformRulesQueryVariables = Exact<{ [key: string]: never; }>;
 

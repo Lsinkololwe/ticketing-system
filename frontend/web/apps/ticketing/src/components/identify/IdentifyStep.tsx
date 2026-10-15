@@ -82,7 +82,9 @@ export function IdentifyStep({ returnTo, onBeforeRedirect, navigate, welcomeDela
   const [step, setStep] = useState<Step>('contact');
   const { countries } = useCountryOptions();
   const contactForm = useZodForm(contactSchema, { defaultValues: { mode: 'WHATSAPP', phone: '', email: '' } });
-  const codeForm = useZodForm(codeSchema, { defaultValues: { code: '' } });
+  // Validated on submit, not on blur: an empty-code error appearing when focus leaves the boxes pushes
+  // "Resend" and "Send by email instead" down between the press and the release, and the click is lost.
+  const codeForm = useZodForm(codeSchema, { defaultValues: { code: '' }, mode: 'onSubmit' });
   const code = codeForm.watch('code') ?? '';
   const mode = contactForm.watch('mode') as ContactMode;
   const phone = contactForm.watch('phone') || undefined;

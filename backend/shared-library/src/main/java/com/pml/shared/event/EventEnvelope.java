@@ -12,7 +12,7 @@ import java.util.Objects;
  * Each field here exists because some consumer or operator has to answer a different question:
  *
  * <ul>
- *   <li>{@code eventId} — <b>the deduplication key</b>. Azure Service Bus delivers at least
+ *   <li>{@code eventId} — <b>the deduplication key</b>. The broker delivers at least
  *       once, so every consumer will eventually see the same message twice. Without a stable id
  *       minted by the publisher, "have I seen this?" has no answer and a redelivered
  *       {@code PaymentCompleted} issues a second ticket.</li>

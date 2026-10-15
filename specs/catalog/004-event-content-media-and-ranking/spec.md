@@ -62,6 +62,18 @@ and the gateway's upload ceiling instead of its 1 MB GraphQL one. The GraphQL `u
 `uploadStockImage` carry the picture as base64 for small images and for clients that cannot send
 multipart. Both reach `MediaService`, which checks the bytes.
 
+**A larger picture goes in two steps, straight to the bucket.** Up to 20 MB. `requestMediaUpload` (and
+`requestStockImageUpload`) checks the declared name, type and size, and answers with a short-lived grant: an
+address in the private bucket that accepts one `PUT` of exactly that size and type, the headers to send, and a
+signed token. The file goes to the bucket without passing through GraphQL or this service.
+`completeMediaUpload` (and `completeStockImageUpload`) then reads the object, checks the same bytes rules at the
+larger ceiling and the exact granted size, and only then writes the asset row. A file that fails is deleted
+before the refusal, so a bad upload leaves nothing; until the row exists nothing is served. The token binds
+the key, the organization (or `stock`), the user, the size and the type, expires in 15 minutes, is an
+HMAC-SHA256 over its own body, and is answered as `MEDIA_UNKNOWN` for anyone but its holder. Completing twice
+answers with the asset the first completion made. With the disk store (development) the grant names this
+service's own `PUT /api/v1/media/upload-target`, which enforces the same token, type and size.
+
 **Moderation is audited and reversible.** Flag keeps serving; remove stops serving and detaches the
 image from every event banner, thumbnail and gallery; restore returns it to `ACTIVE`. Every
 administrator action appends to the asset's `moderationLog`, which is never rewritten. A banner
@@ -80,9 +92,10 @@ nothing.
 
 **Rejected alternatives**
 
-- *Presigned uploads straight to the bucket.* Right for large documents; an event picture is capped at
-  5 MB and the editor needs the asset back in the same round trip as its metadata. The bucket stays
-  private and catalog serves the picture, so removal takes effect at the origin.
+- *Presigned uploads that make the bucket the origin.* Rejected for pictures: a public or CDN-signed bucket
+  address could not be withdrawn the moment moderation removes an image. A presigned *upload* into the private
+  bucket is the two-step flow above (T8); the bucket stays private and catalog serves the picture, so removal
+  takes effect at the origin.
 - *A `categoryImage` field on the category row.* It would put presentation into reference data, which
   ET-PLT-014 forbids.
 - *A scheduled sweep that publishes due events.* Timers live in workflows (ET-PLT-015).
@@ -297,7 +310,7 @@ booking commit → tier $inc → event soldTickets / availableTickets / grossSal
 - [x] **T6 · Organizer media, moderation, stock images** — requirements: R8, R9, R10 — files: `MediaService`, `MediaStorage`, `MediaFileController`
 - [x] **T7 · Organizer list, sales totals, profile counts** — requirements: R11, R12 — files: `OrganizerEventFeed`, `InventoryServiceImpl`, `OrganizerProfileService`
 - [x] **T9 · Signed-out browsing** — requirements: R13 — files: `PublicDiscoveryConfig`, `schema.graphqls` (`@auth` on non-public fields), `PublicGraphQlFilter`
-- [ ] **T8 · Presigned upload flow for images over 5 MB** — deferred; both upload paths stop at 5 MB
+- [x] **T8 · Presigned upload flow for images over 5 MB** — requirements: R8 — files: `MediaService.requestUpload/complete*`, `MediaUploadTokens`, `MediaStorage.grantUpload`, `S3MediaStorage`, `MediaUploadTargetController`
 
 ## 6. Out of scope
 

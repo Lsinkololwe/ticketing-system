@@ -28,6 +28,7 @@ export type PolicyName =
   | 'logout'
   | 'backchannel'
   | 'stepup'
+  | 'refresh'
   | 'api'
   | 'api_anon';
 
@@ -101,6 +102,7 @@ export function defaultPolicies(app: string): Record<PolicyName, Policy> {
     },
     backchannel: { rules: [{ subject: 'ip', limit: 60, windowSec: 60 }], failMode: 'closed' },
     stepup: { rules: [{ subject: 'session', limit: 5, windowSec: 600 }], failMode: 'closed' },
+    refresh: { rules: [{ subject: 'session', limit: 6, windowSec: 60 }], failMode: 'closed' },
     api: { rules: [{ subject: 'session', limit: 600, windowSec: 60 }], failMode: 'open' },
     api_anon: { rules: [{ subject: 'ip', limit: 120, windowSec: 60 }], failMode: 'open' },
   };

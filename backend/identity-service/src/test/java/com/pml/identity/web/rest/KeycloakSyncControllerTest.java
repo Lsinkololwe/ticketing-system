@@ -49,7 +49,7 @@ class KeycloakSyncControllerTest {
         revoker = Mockito.mock(KeycloakSessionRevoker.class);
         when(revoker.revoke(any(), any(), any())).thenReturn(Mono.just(1));
         access = Mockito.mock(AccessRevocationService.class);
-        when(access.cutOtherSessions(any(), any(), any())).thenReturn(Mono.just(2L));
+        when(access.cutOtherSessions(any(), any(), any(), any())).thenReturn(Mono.just(2L));
         client = WebTestClient.bindToController(
                 new KeycloakSyncController(process, new KeycloakProperties(), revoker, access))
                 .build();
@@ -180,14 +180,14 @@ class KeycloakSyncControllerTest {
                         + "\"sid\":\"sid-keep\"}")
                 .exchange().expectStatus().isAccepted().expectBody().jsonPath("$.action").isEqualTo("REVOKED");
 
-        verify(access).cutOtherSessions("kc-1", "sid-keep", RevocationTrigger.CREDENTIAL_CHANGE);
+        verify(access).cutOtherSessions(org.mockito.ArgumentMatchers.eq("kc-1"), org.mockito.ArgumentMatchers.eq("sid-keep"), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(RevocationTrigger.CREDENTIAL_CHANGE));
         verify(process, never()).accept(any(), any());
     }
 
     @Test
     @DisplayName("a second-factor change is a credential change too, and a failed write answers 503 so the listener retries")
     void credentialChangeRetriesOnFailure() {
-        when(access.cutOtherSessions(any(), any(), any()))
+        when(access.cutOtherSessions(any(), any(), any(), any()))
                 .thenReturn(Mono.error(new IllegalStateException("mongo down")));
 
         client.post().uri("/api/internal/keycloak/sync/event").header("Content-Type", "application/json")

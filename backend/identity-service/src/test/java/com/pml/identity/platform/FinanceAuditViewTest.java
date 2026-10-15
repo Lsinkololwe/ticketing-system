@@ -61,7 +61,7 @@ class FinanceAuditViewTest {
             Reason.AUDIT_TRAIL_READ, Reason.FINANCE_AUDIT_VIEW_READ, Reason.BOOKING_CONTACT_READ,
             Reason.EVENT_ACCESS_GRANTS_READ, Reason.USER_EVENT_GRANT_READ, Reason.ORGANIZATION_MEMBER_READ,
             Reason.ORGANIZATION_TEAM_READ, Reason.OWNERSHIP_TRANSFER_READ, Reason.CALLER_SCOPED_QUERY,
-            Reason.STAFF_PERMISSION_GRANT_READ,
+            Reason.STAFF_PERMISSION_GRANT_READ, Reason.PROMO_CODE_MANAGE, Reason.PLATFORM_PERMISSION_EXERCISED,
             // system reaches are a log line, never an audit row
             Reason.LIFECYCLE_WORKFLOW, Reason.EVENT_COMPLETION, Reason.FINANCE_WORKFLOW, Reason.REFUND_WORKFLOW);
 

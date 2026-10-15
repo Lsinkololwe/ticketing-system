@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -12,7 +14,6 @@ import com.pml.booking.web.graphql.dto.JournalLineInput;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.stream.Collectors;
@@ -68,7 +69,7 @@ public class JournalEntryMutationResolver {
      * <p>Security: createdBy is extracted from JWT, not from client input.</p>
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LEDGER_MANAGE)
     public Mono<JournalEntry> createJournalEntry(
             @Valid @InputArgument CreateJournalEntryInput input
     ) {
@@ -110,7 +111,7 @@ public class JournalEntryMutationResolver {
      * <p>Security: postedBy is extracted from JWT, not from client input.</p>
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LEDGER_MANAGE)
     public Mono<JournalEntry> postJournalEntry(
             @InputArgument String id
     ) {
@@ -130,7 +131,7 @@ public class JournalEntryMutationResolver {
      * <p>Security: reversedBy is extracted from JWT, not from client input.</p>
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LEDGER_MANAGE)
     public Mono<JournalEntry> reverseJournalEntry(
             @InputArgument String id,
             @InputArgument String reason

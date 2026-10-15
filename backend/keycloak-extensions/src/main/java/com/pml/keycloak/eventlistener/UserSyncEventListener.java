@@ -94,8 +94,8 @@ public class UserSyncEventListener implements EventListenerProvider {
                 return;
             }
             boolean sessionEnding = SESSION_ENDING.contains(event.getType());
-            String sid = sessionEnding || CREDENTIAL_CHANGES.contains(event.getType())
-                    ? event.getSessionId() : null;
+            String sid = sessionEnding ? event.getSessionId()
+                    : CREDENTIAL_CHANGES.contains(event.getType()) ? credentialChangeSessionId(event) : null;
             if (sessionEnding && (sid == null || sid.isBlank())) {
                 return;
             }
@@ -122,6 +122,34 @@ public class UserSyncEventListener implements EventListenerProvider {
                     enabled, emailVerified, event.getTime(), sid));
         } catch (RuntimeException e) {
             LOG.warn("user-sync dropped a user event: " + e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * The session a credential change was made in.
+     *
+     * <p>A password or authenticator set during a sign-in (a new staff account's first sign-in, a
+     * forced update) is reported with no session id, although the session that sign-in is creating
+     * already exists. Keycloak builds the user session with the id of the sign-in's root
+     * authentication session, so that id names it. Without it, identity-service sees a credential
+     * change that names no session, cuts every session of the person, and ends the sign-in they have
+     * just completed.</p>
+     *
+     * @return the event's session id, else the sign-in's session id, else {@code null}
+     */
+    private String credentialChangeSessionId(Event event) {
+        String sid = event.getSessionId();
+        if (sid != null && !sid.isBlank()) {
+            return sid;
+        }
+        try {
+            var context = session.getContext();
+            var authenticationSession = context == null ? null : context.getAuthenticationSession();
+            var root = authenticationSession == null ? null : authenticationSession.getParentSession();
+            return root == null ? null : root.getId();
+        } catch (RuntimeException unavailable) {
+            // No sign-in is in progress on this thread; the change then names no session.
+            return null;
         }
     }
 

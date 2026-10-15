@@ -366,7 +366,9 @@ The table is pinned by `InternalSurfaceTableTest` in each service, which fails w
 | `POST /api/internal/auth/dev/captured/search` | identity | `internal-write` | the codes the in-memory capture kept, for the recipient named in the JSON body (never in the URL); exists only where `identity.delivery.capture.enabled=true` (local and test), loopback callers only, and refused when `X-Forwarded-For`, `Forwarded` or `X-Real-IP` is present |
 | `POST /api/internal/auth/handles/redeem` | identity | `internal-write` | redeem a login handle |
 | `POST /api/internal/authorization/check` | identity | `internal-write` | decide whether a user may perform an action on a resource |
+| `POST /api/internal/authorization/check-many` | identity | `internal-write` | decide up to 100 such questions in one call, answered in the order asked |
 | `GET /api/internal/authorization/check-same-organization` | identity | `internal-read` | whether two users share an organization |
+| `GET /api/internal/authorization/catalogue-fingerprint` | identity | `internal-read` | the digest of the permission catalogue identity was built with, so another service can report a mismatch |
 | `GET /api/internal/authorization/event-access` | identity | `internal-read` | whether a user holds a permission on an event |
 | `GET /api/internal/authorization/organization-name` | identity | `internal-read` | an organization's display name, for denormalizing; 404 when none is on file |
 | `GET /api/internal/authorization/user-organizations` | identity | `internal-read` | the organizations a user is a member of |

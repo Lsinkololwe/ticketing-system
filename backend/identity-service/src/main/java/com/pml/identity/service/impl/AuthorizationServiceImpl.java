@@ -5,7 +5,7 @@ import com.pml.shared.security.Permission;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.service.AuthorizationService;
 import com.pml.identity.service.PermissionResolutionService;
-import com.pml.identity.service.PermissionResolutionService.Decision;
+import com.pml.identity.authorization.Decision;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationService;
 import com.pml.identity.web.rest.InternalAuthorizationController.OrganizationMembershipInfo;
@@ -93,18 +93,18 @@ public class AuthorizationServiceImpl implements AuthorizationService {
 
     /** Words the resolution's decision in this endpoint's response shape and refusal texts. */
     private static AuthorizationResult toResult(Decision decision, Permission permission, String eventId) {
-        return switch (decision.outcome()) {
-            case EVENT_GRANT -> AuthorizationResult.authorizedByEventGrant(eventId, decision.role());
-            case MEMBER -> AuthorizationResult.authorizedAsMember(decision.organizationId(), decision.role());
-            case GRANT_LACKS_PERMISSION, MEMBER_LACKS_PERMISSION ->
+        return switch (decision.step()) {
+            case GRANT_ROLE, GRANT_CUSTOM -> AuthorizationResult.authorizedByEventGrant(eventId, decision.role());
+            case MEMBER_ROLE, MEMBER_CUSTOM -> AuthorizationResult.authorizedAsMember(decision.organizationId(), decision.role());
+            case GRANT_EXHAUSTIVE, MEMBER_DENIED, DEFAULT ->
                     AuthorizationResult.deniedInsufficientPermissions(permission.code(), decision.role());
             case ORGANIZATION_STATUS -> AuthorizationResult.denied(
                     "Organization status " + decision.organizationStatus() + " does not permit " + permission.code());
             case NOT_A_MEMBER -> AuthorizationResult.deniedNotMember();
             case ORGANIZATION_UNKNOWN -> AuthorizationResult.denied("Organization not found");
             case NO_ORGANIZATION -> AuthorizationResult.denied("No event access grant and organization ID not provided");
-            // Anything else, including a platform-role outcome this endpoint never asks for, refuses.
-            default -> AuthorizationResult.denied("Not authorized");
+            // A platform-role allow is never asked for by this endpoint, and an unknown permission refuses.
+            case PLATFORM_ROLE, PERMISSION_UNKNOWN -> AuthorizationResult.denied("Not authorized");
         };
     }
 

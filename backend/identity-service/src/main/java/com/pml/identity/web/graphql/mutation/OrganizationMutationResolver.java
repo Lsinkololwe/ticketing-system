@@ -1,5 +1,6 @@
 package com.pml.identity.web.graphql.mutation;
 
+import com.pml.shared.security.RequiresPermission;
 import com.pml.identity.web.graphql.dto.organization.OrganizationApplicationInput;
 import com.pml.identity.web.graphql.dto.organization.UpdateOrganizationInput;
 import com.pml.identity.web.graphql.dto.organization.UpdateOrganizationSettingsInput;
@@ -150,8 +151,8 @@ public class OrganizationMutationResolver {
      * Approve an organization application (admin only).
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @FailClosedOnRevocation("admin.approveOrganization")
+    @RequiresPermission(Permission.ORGANIZATION_APPROVE)
     public Mono<Organization> approveOrganization(
             @InputArgument String id,
             @InputArgument Double commissionRate) {
@@ -174,8 +175,8 @@ public class OrganizationMutationResolver {
      * Request changes to an organization application (admin only).
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @FailClosedOnRevocation("admin.requestOrganizationChanges")
+    @RequiresPermission(Permission.ORGANIZATION_APPROVE)
     public Mono<Organization> requestOrganizationChanges(
             @InputArgument String id,
             @InputArgument String reason) {
@@ -189,8 +190,8 @@ public class OrganizationMutationResolver {
      * Reject an organization application (admin only).
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @FailClosedOnRevocation("admin.rejectOrganization")
+    @RequiresPermission(Permission.ORGANIZATION_APPROVE)
     public Mono<Organization> rejectOrganization(
             @InputArgument String id,
             @InputArgument String reason) {
@@ -262,8 +263,8 @@ public class OrganizationMutationResolver {
      * Suspend organization (admin only).
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @FailClosedOnRevocation("admin.suspendOrganization")
+    @RequiresPermission(Permission.ORGANIZATION_SUSPEND)
     public Mono<Organization> suspendOrganization(
             @InputArgument String id,
             @InputArgument String reason) {
@@ -287,8 +288,8 @@ public class OrganizationMutationResolver {
      * Unsuspend organization (admin only).
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     @FailClosedOnRevocation("admin.unsuspendOrganization")
+    @RequiresPermission(Permission.ORGANIZATION_SUSPEND)
     public Mono<Organization> unsuspendOrganization(
             @InputArgument String id) {
         return SecurityContextUtils.getCurrentUserId()
@@ -303,7 +304,7 @@ public class OrganizationMutationResolver {
      * Update organization status (admin only).
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.ORGANIZATION_MANAGE)
     @FailClosedOnRevocation("admin.updateOrganizationStatus")
     public Mono<Organization> updateOrganizationStatus(
             @InputArgument String id,

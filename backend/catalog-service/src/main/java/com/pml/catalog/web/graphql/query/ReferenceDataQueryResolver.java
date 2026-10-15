@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.domain.enums.ReferenceType;
@@ -67,7 +69,7 @@ public class ReferenceDataQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.REFERENCE_DATA_MANAGE)
     public Mono<ReferenceDataOffsetPage> referenceDataAll(
             @InputArgument ReferenceType type,
             @InputArgument PageableInput pagination) {

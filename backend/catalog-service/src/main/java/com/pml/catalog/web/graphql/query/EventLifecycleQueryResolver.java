@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.EventLifecycleDto;
@@ -8,7 +10,6 @@ import com.pml.catalog.service.EventLifecycleService;
 import com.pml.shared.constants.EventStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -32,7 +33,7 @@ public class EventLifecycleQueryResolver {
      * @return the event lifecycle with all transitions
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_VIEW)
     public Mono<EventLifecycleDto> eventLifecycle(@InputArgument String eventId) {
         log.debug("GraphQL query: eventLifecycle(eventId={})", eventId);
         return lifecycleService.getEventLifecycle(eventId);
@@ -46,7 +47,7 @@ public class EventLifecycleQueryResolver {
      * @return list of valid next statuses
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_VIEW)
     public Mono<List<EventStatus>> allowedStatusTransitions(@InputArgument String eventId) {
         log.debug("GraphQL query: allowedStatusTransitions(eventId={})", eventId);
         return lifecycleService.getAllowedStatusTransitions(eventId);

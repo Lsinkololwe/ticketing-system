@@ -21,10 +21,11 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * A payout account belongs to the organization. Who may add, see or change it is whoever holds the
- * payout permission there; everyone else is told the account does not exist. Flat methods: F-055.
+ * bank-account permission there; everyone else is told the account does not exist. Flat methods: F-055.
  */
 @Tag("L1")
 @Tag("ET-PLT-007")
+@Tag("ET-PLT-013")
 @DisplayName("Payout accounts are managed by members holding the organization's payout permission")
 class BankAccountAccessTest {
 
@@ -45,9 +46,9 @@ class BankAccountAccessTest {
     }
 
     @Test
-    @DisplayName("a member holding the payout permission may manage, whoever added the account")
+    @DisplayName("a member holding the bank-account permission may manage, whoever added the account")
     void permittedMemberMayManage() {
-        Mockito.when(payout.mayRequest("member-1", "org-1", null)).thenReturn(Mono.just(true));
+        Mockito.when(payout.mayManageBankAccounts("member-1", "org-1")).thenReturn(Mono.just(true));
 
         assertThat(as(access.require("org-1"), "member-1", TenantScope.of("member-1", Set.of("org-1"))).block())
                 .isEqualTo("org-1");
@@ -56,7 +57,7 @@ class BankAccountAccessTest {
     @Test
     @DisplayName("a member without the permission is refused as an unknown account")
     void memberWithoutPermissionIsRefused() {
-        Mockito.when(payout.mayRequest("member-1", "org-1", null)).thenReturn(Mono.just(false));
+        Mockito.when(payout.mayManageBankAccounts("member-1", "org-1")).thenReturn(Mono.just(false));
 
         Throwable refused = catchThrowable(
                 () -> as(access.require("org-1"), "member-1", TenantScope.of("member-1", Set.of("org-1"))).block());

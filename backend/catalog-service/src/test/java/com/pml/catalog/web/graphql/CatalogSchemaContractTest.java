@@ -58,9 +58,48 @@ class CatalogSchemaContractTest {
                 .orElseThrow(() -> new AssertionError(root + "." + name + " is not in the schema"));
     }
 
+    /** The resolvers that answer the operations this test names. */
+    private static final List<Class<?>> RESOLVERS = List.of(
+            com.pml.catalog.web.graphql.mutation.MediaMutationResolver.class,
+            com.pml.catalog.web.graphql.query.MediaQueryResolver.class,
+            com.pml.catalog.web.graphql.mutation.EventMutationResolver.class,
+            com.pml.catalog.web.graphql.query.OrganizerEventConnectionResolver.class,
+            com.pml.catalog.web.graphql.query.EventRankingQueryResolver.class,
+            com.pml.catalog.web.graphql.mutation.TierAccessMutationResolver.class,
+            com.pml.catalog.web.graphql.query.EventQueryResolver.class);
+
+    /**
+     * What guards an operation, read from its resolver: {@code permission:<code>} for a platform
+     * permission, {@code tenant:<code>} for an organization permission, {@code authenticated}, or
+     * {@code PUBLIC} where the schema opens it on purpose. The guard is on the method, not in the schema.
+     */
     private static Optional<String> role(FieldDefinition field) {
-        return field.getDirectives("auth").stream().findFirst()
+        Optional<String> declaredOpen = field.getDirectives("auth").stream().findFirst()
                 .map(directive -> ((EnumValue) directive.getArgument("requires").getValue()).getName());
+        if (declaredOpen.filter("PUBLIC"::equals).isPresent()) {
+            return declaredOpen;
+        }
+        for (Class<?> resolver : RESOLVERS) {
+            for (java.lang.reflect.Method method : resolver.getDeclaredMethods()) {
+                if (!method.getName().equals(field.getName())) {
+                    continue;
+                }
+                com.pml.shared.security.RequiresPermission platform =
+                        method.getAnnotation(com.pml.shared.security.RequiresPermission.class);
+                if (platform != null) {
+                    return Optional.of("permission:" + platform.value().code());
+                }
+                com.pml.shared.security.RequiresTenantPermission tenant =
+                        method.getAnnotation(com.pml.shared.security.RequiresTenantPermission.class);
+                if (tenant != null) {
+                    return Optional.of("tenant:" + tenant.value().code());
+                }
+                if (method.isAnnotationPresent(org.springframework.security.access.prepost.PreAuthorize.class)) {
+                    return Optional.of("authenticated");
+                }
+            }
+        }
+        return declaredOpen;
     }
 
     private static List<String> tags(FieldDefinition field) {
@@ -69,52 +108,58 @@ class CatalogSchemaContractTest {
     }
 
     @Test
-    @DisplayName("cancelEvent is for organizers and for the admin audience, and ADMIN is within ORGANIZER's hierarchy")
+    @DisplayName("cancelEvent is the event:cancel permission, for organizers and for the admin audience")
     void cancelEventIsAnAdminOperationToo() {
         FieldDefinition cancel = field("Mutation", "cancelEvent");
 
-        assertThat(role(cancel)).contains("ORGANIZER");
+        assertThat(role(cancel)).contains("tenant:event:cancel");
         assertThat(tags(cancel)).contains("organizer", "admin");
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"flagMedia", "removeMedia", "restoreMedia", "overrideEventBanner",
-            "uploadStockImage", "updateStockImage", "deleteStockImage"})
-    @DisplayName("moderation and the stock library are administrators' and tagged admin")
-    void adminMutations(String name) {
+    @org.junit.jupiter.params.provider.CsvSource({
+            "flagMedia,permission:media_moderation:manage", "removeMedia,permission:media_moderation:manage",
+            "restoreMedia,permission:media_moderation:manage", "overrideEventBanner,permission:media_moderation:manage",
+            "uploadStockImage,permission:stock_image:manage", "updateStockImage,permission:stock_image:manage",
+            "deleteStockImage,permission:stock_image:manage"})
+    @DisplayName("moderation and the stock library are platform permissions and tagged admin")
+    void adminMutations(String name, String guard) {
         FieldDefinition mutation = field("Mutation", name);
 
-        assertThat(role(mutation)).contains("ADMIN");
+        assertThat(role(mutation)).contains(guard);
         assertThat(tags(mutation)).contains("admin");
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"uploadMedia", "updateMedia", "deleteMedia", "cancelScheduledPublish"})
-    @DisplayName("an organizer's mutations are for organizers")
-    void organizerMutations(String name) {
-        assertThat(role(field("Mutation", name))).contains("ORGANIZER");
+    @org.junit.jupiter.params.provider.CsvSource({
+            "uploadMedia,tenant:media:manage", "updateMedia,tenant:media:manage", "deleteMedia,tenant:media:manage",
+            "cancelScheduledPublish,tenant:event:publish"})
+    @DisplayName("an organizer's mutations are organization permissions")
+    void organizerMutations(String name, String guard) {
+        assertThat(role(field("Mutation", name))).contains(guard);
         assertThat(tags(field("Mutation", name))).contains("organizer");
     }
 
     @Test
     @DisplayName("the moderation queue is an administrators' query")
     void moderationQueue() {
-        assertThat(role(field("Query", "mediaAssets"))).contains("ADMIN");
+        assertThat(role(field("Query", "mediaAssets"))).contains("permission:media_moderation:view");
         assertThat(tags(field("Query", "mediaAssets"))).contains("admin");
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"myMedia", "myEventsConnection", "stockImages"})
-    @DisplayName("an organizer's lists are for organizers")
-    void organizerQueries(String name) {
-        assertThat(role(field("Query", name))).contains("ORGANIZER");
+    @org.junit.jupiter.params.provider.CsvSource({
+            "myMedia,tenant:media:manage", "myEventsConnection,tenant:event:view", "stockImages,tenant:media:manage"})
+    @DisplayName("an organizer's lists are organization permissions")
+    void organizerQueries(String name, String guard) {
+        assertThat(role(field("Query", name))).contains(guard);
     }
 
     @Test
     @DisplayName("a buyer's operations need a signed-in customer; the trending list needs nothing")
     void buyerOperations() {
-        assertThat(role(field("Mutation", "unlockTierWithAccessCode"))).contains("CUSTOMER");
-        assertThat(role(field("Query", "recommendedEvents"))).contains("CUSTOMER");
+        assertThat(role(field("Mutation", "unlockTierWithAccessCode"))).contains("authenticated");
+        assertThat(role(field("Query", "recommendedEvents"))).contains("authenticated");
         assertThat(role(field("Query", "trendingEvents"))).contains("PUBLIC");
         assertThat(role(field("Query", "discoverEvents"))).contains("PUBLIC");
     }

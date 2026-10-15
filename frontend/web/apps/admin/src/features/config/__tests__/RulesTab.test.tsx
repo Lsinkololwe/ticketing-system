@@ -115,10 +115,10 @@ describe('RulesTab', () => {
     expect(screen.getAllByText(/Full refund until two days before\./).length).toBeGreaterThan(0);
   });
 
-  it('locks timing rules for admins who are not super admins', () => {
+  it('locks every platform rule for admins: only the super admin holds platform:configure', () => {
     renderConsole(<RulesTab />, { roles: ['ADMIN'] });
     expect(screen.getByLabelText('Reservation hold (minutes)')).toBeDisabled();
-    expect(screen.getByLabelText('Default commission (%)')).not.toBeDisabled();
+    expect(screen.getByLabelText('Default commission (%)')).toBeDisabled();
   });
 
   it('updates the preview live, validates, confirms and saves only changed fields', async () => {
@@ -156,7 +156,7 @@ describe('RulesTab', () => {
     renderConsole(<RulesTab />, { roles: ['ADMIN'] });
     expect(screen.getByRole('switch', { name: /Allow self-approval/ })).toBeDisabled();
     expect(screen.getByText('Only super admins can change self-approval.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Approval target (hours)')).not.toBeDisabled();
+    expect(screen.getByLabelText('Approval target (hours)')).toBeDisabled();
   });
 
   it('disables edits for roles without cfgEdit', () => {

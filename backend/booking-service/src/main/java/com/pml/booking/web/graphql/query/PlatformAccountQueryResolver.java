@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.enums.PlatformAccountType;
@@ -8,7 +10,6 @@ import com.pml.booking.domain.model.PlatformAccount;
 import com.pml.booking.service.PlatformAccountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -42,7 +43,7 @@ public class PlatformAccountQueryResolver {
      * Schema: platformAccounts: [PlatformAccount!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_ACCOUNT_VIEW)
     public Mono<List<PlatformAccount>> platformAccounts() {
         log.debug("GraphQL query: platformAccounts");
         return platformAccountService.getAllAccounts().collectList();
@@ -53,7 +54,7 @@ public class PlatformAccountQueryResolver {
      * Schema: platformAccount(id: ID!): PlatformAccount
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_ACCOUNT_VIEW)
     public Mono<PlatformAccount> platformAccount(@InputArgument String id) {
         log.debug("GraphQL query: platformAccount(id={})", id);
         Objects.requireNonNull(id, "Platform account ID is required");
@@ -65,7 +66,7 @@ public class PlatformAccountQueryResolver {
      * Schema: platformAccountByType(accountType: PlatformAccountType!): PlatformAccount
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_ACCOUNT_VIEW)
     public Mono<PlatformAccount> platformAccountByType(@InputArgument PlatformAccountType accountType) {
         log.debug("GraphQL query: platformAccountByType({})", accountType);
         Objects.requireNonNull(accountType, "Platform account type is required");

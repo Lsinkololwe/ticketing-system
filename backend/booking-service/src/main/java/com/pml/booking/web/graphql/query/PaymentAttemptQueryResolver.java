@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.enums.PaymentAttemptStatus;
@@ -8,7 +10,6 @@ import com.pml.booking.domain.model.PaymentAttempt;
 import com.pml.booking.service.PaymentAttemptService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -48,7 +49,7 @@ public class PaymentAttemptQueryResolver {
      * Get a payment attempt by its database ID.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<PaymentAttempt> paymentAttempt(@InputArgument String id) {
         log.debug("GraphQL query: paymentAttempt(id={})", id);
         return paymentAttemptService.findById(id);
@@ -59,7 +60,7 @@ public class PaymentAttemptQueryResolver {
      * This is the primary lookup for webhook processing and idempotency checks.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<PaymentAttempt> paymentAttemptByDepositId(@InputArgument String depositId) {
         log.debug("GraphQL query: paymentAttemptByDepositId(depositId={})", depositId);
         return paymentAttemptService.findByDepositId(depositId);
@@ -69,7 +70,7 @@ public class PaymentAttemptQueryResolver {
      * Get a payment attempt by its human-readable attempt number.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<PaymentAttempt> paymentAttemptByAttemptNumber(@InputArgument String attemptNumber) {
         log.debug("GraphQL query: paymentAttemptByAttemptNumber(attemptNumber={})", attemptNumber);
         return paymentAttemptService.findByAttemptNumber(attemptNumber);
@@ -79,7 +80,7 @@ public class PaymentAttemptQueryResolver {
      * Every attempt made against one payment intent.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Flux<PaymentAttempt> paymentAttempts(@InputArgument String intentId) {
         log.debug("GraphQL query: paymentAttempts(intentId={})", intentId);
         return paymentAttemptService.findByPaymentIntentId(intentId);
@@ -93,7 +94,7 @@ public class PaymentAttemptQueryResolver {
      * Get all payment attempts for a ticket (shows retry history).
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Flux<PaymentAttempt> paymentAttemptsByReservation(@InputArgument String reservationId) {
         log.debug("GraphQL query: paymentAttemptsByReservation(reservationId={})", reservationId);
         return paymentAttemptService.findByReservationId(reservationId);
@@ -103,7 +104,7 @@ public class PaymentAttemptQueryResolver {
      * Get the most recent payment attempt for a ticket.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<PaymentAttempt> latestPaymentAttemptByReservation(@InputArgument String reservationId) {
         log.debug("GraphQL query: latestPaymentAttemptByReservation(reservationId={})", reservationId);
         return paymentAttemptService.findLatestByReservationId(reservationId);
@@ -113,7 +114,7 @@ public class PaymentAttemptQueryResolver {
      * Get the successful payment attempt for a ticket (CONFIRMED or COMPLETED).
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<PaymentAttempt> successfulPaymentAttemptByReservation(@InputArgument String reservationId) {
         log.debug("GraphQL query: successfulPaymentAttemptByReservation(reservationId={})", reservationId);
         return paymentAttemptService.findSuccessfulByReservationId(reservationId);
@@ -127,7 +128,7 @@ public class PaymentAttemptQueryResolver {
      * Get all payment attempts by status.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Flux<PaymentAttempt> paymentAttemptsByStatus(@InputArgument PaymentAttemptStatus status) {
         log.debug("GraphQL query: paymentAttemptsByStatus(status={})", status);
         return paymentAttemptService.findByStatus(status);
@@ -138,7 +139,7 @@ public class PaymentAttemptQueryResolver {
      * Used for monitoring and recovery dashboard.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<List<PaymentAttempt>> pendingPaymentAttempts() {
         log.debug("GraphQL query: pendingPaymentAttempts()");
         return Flux.fromIterable(PENDING_STATUSES)
@@ -151,7 +152,7 @@ public class PaymentAttemptQueryResolver {
      * These need fulfillment (escrow, commission, journal).
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Flux<PaymentAttempt> confirmedUnfulfilledPaymentAttempts() {
         log.debug("GraphQL query: confirmedUnfulfilledPaymentAttempts()");
         return paymentAttemptService.findConfirmedUnfulfilled();
@@ -165,7 +166,7 @@ public class PaymentAttemptQueryResolver {
      * Get all payment attempts for an event.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Flux<PaymentAttempt> paymentAttemptsByEvent(@InputArgument String eventId) {
         log.debug("GraphQL query: paymentAttemptsByEvent(eventId={})", eventId);
         return paymentAttemptService.findByEventId(eventId);
@@ -175,7 +176,7 @@ public class PaymentAttemptQueryResolver {
      * Get all payment attempts by a buyer.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Flux<PaymentAttempt> paymentAttemptsByBuyer(@InputArgument String buyerId) {
         log.debug("GraphQL query: paymentAttemptsByBuyer(buyerId={})", buyerId);
         return paymentAttemptService.findByBuyerId(buyerId);
@@ -189,7 +190,7 @@ public class PaymentAttemptQueryResolver {
      * Count payment attempts by status.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<Long> paymentAttemptCountByStatus(@InputArgument PaymentAttemptStatus status) {
         log.debug("GraphQL query: paymentAttemptCountByStatus(status={})", status);
         return paymentAttemptService.countByStatus(status);
@@ -199,7 +200,7 @@ public class PaymentAttemptQueryResolver {
      * Check if a ticket has a successful payment.
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<Boolean> hasSuccessfulPayment(@InputArgument String reservationId) {
         log.debug("GraphQL query: hasSuccessfulPayment(reservationId={})", reservationId);
         return paymentAttemptService.hasSuccessfulPayment(reservationId);

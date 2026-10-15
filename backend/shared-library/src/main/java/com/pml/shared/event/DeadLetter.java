@@ -18,8 +18,8 @@ import reactor.core.publisher.Mono;
  * @param eventId      the envelope's id — the key a replay is idempotent on
  * @param eventType    the {@link EventType} wire name
  * @param consumerName the handler that gave up, not the subscription it arrived on
- * @param subscription the Service Bus subscription, so depth can be attributed
- * @param reason       short and machine-readable; the Service Bus dead-letter *reason* field
+ * @param subscription the subscription (queue), so depth can be attributed
+ * @param reason       short and machine-readable; the dead-letter *reason* header
  * @param description  the failure's own message, for a human reading the recovery queue
  */
 public record DeadLetter(String eventId,

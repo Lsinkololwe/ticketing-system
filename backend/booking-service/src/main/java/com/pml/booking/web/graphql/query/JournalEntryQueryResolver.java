@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.pml.shared.constants.PlatformTime;
+import com.pml.shared.security.Permission;
+import com.pml.shared.security.RequiresPermission;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
@@ -14,7 +16,6 @@ import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
 import com.pml.booking.web.graphql.dto.PaginationInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -53,7 +54,7 @@ public class JournalEntryQueryResolver {
      * Schema: journalEntry(id: ID!): JournalEntry
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.FINANCIAL_VIEW)
     public Mono<JournalEntry> journalEntry(@InputArgument String id) {
         log.debug("GraphQL query: journalEntry(id={})", id);
         Objects.requireNonNull(id, "Journal entry ID is required");
@@ -65,7 +66,7 @@ public class JournalEntryQueryResolver {
      * Schema: journalEntryByNumber(entryNumber: String!): JournalEntry
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.FINANCIAL_VIEW)
     public Mono<JournalEntry> journalEntryByNumber(@InputArgument String entryNumber) {
         log.debug("GraphQL query: journalEntryByNumber({})", entryNumber);
         Objects.requireNonNull(entryNumber, "Entry number is required");
@@ -77,7 +78,7 @@ public class JournalEntryQueryResolver {
      * Schema: journalEntriesByCorrelationId(correlationId: String!): [JournalEntry!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.FINANCIAL_VIEW)
     public Mono<List<JournalEntry>> journalEntriesByCorrelationId(@InputArgument String correlationId) {
         log.debug("GraphQL query: journalEntriesByCorrelationId({})", correlationId);
         Objects.requireNonNull(correlationId, "Correlation ID is required");
@@ -93,7 +94,7 @@ public class JournalEntryQueryResolver {
      * Schema: journalEntries(filter: JournalEntryFilterInput, pagination: OffsetPaginationInput): JournalEntryOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.FINANCIAL_VIEW)
     public Mono<JournalEntryOffsetPage> journalEntries(
             @InputArgument JournalEntryFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
@@ -110,7 +111,7 @@ public class JournalEntryQueryResolver {
      * Schema: journalEntriesByAccountCode(accountCode: String!, pagination: OffsetPaginationInput): JournalEntryOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.FINANCIAL_VIEW)
     public Mono<JournalEntryOffsetPage> journalEntriesByAccountCode(
             @InputArgument String accountCode,
             @InputArgument OffsetPaginationInput pagination
@@ -128,7 +129,7 @@ public class JournalEntryQueryResolver {
      * Schema: pendingJournalEntries(pagination: OffsetPaginationInput): JournalEntryOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.FINANCIAL_VIEW)
     public Mono<JournalEntryOffsetPage> pendingJournalEntries(
             @InputArgument OffsetPaginationInput pagination
     ) {

@@ -69,8 +69,8 @@ describe('HealthPage', () => {
     expect(screen.getByText(/You don't have access/)).toBeInTheDocument();
   });
 
-  it('is open to the finance lead', () => {
-    renderConsole(<HealthPage />, { roles: ['FINANCE_LEAD'] });
+  it('is open to whoever holds platform:view, and not to finance staff', () => {
+    renderConsole(<HealthPage />, { roles: ['ADMIN'] });
     expect(screen.getByRole('table', { name: 'Services' })).toBeInTheDocument();
   });
 });

@@ -1495,27 +1495,27 @@ type Query {
     # ========================================================================
 
     # Get current organizer's events with offset pagination
-    myEvents(filter: OrganizerEventFilterInput, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    myEvents(filter: OrganizerEventFilterInput, pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "organizer")
 
     # Get current organizer's draft events
-    myDraftEvents(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    myDraftEvents(pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "organizer")
 
     # Get current organizer's event count
-    myEventCount: Int! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    myEventCount: Int! @tag(name: "organizer")
 
     # Get current organizer's event count by status
-    myEventCountByStatus(status: EventStatus!): Int! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    myEventCountByStatus(status: EventStatus!): Int! @tag(name: "organizer")
 
     # ========================================================================
     # EVENT COUNT QUERIES (ADMIN - Dashboard statistics)
     # ========================================================================
     # Count queries for admin dashboard statistics cards
 
-    eventCount: Int! @auth(requires: ADMIN) @tag(name: "admin")
-    eventCountByOrganizer(organizerId: String!): Int! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    eventCountByCategory(categoryId: String!): Int! @auth(requires: ADMIN) @tag(name: "admin")
-    eventCountByCity(city: String!): Int! @auth(requires: ADMIN) @tag(name: "admin")
-    eventCountByStatus(status: EventStatus!): Int! @auth(requires: ADMIN) @tag(name: "admin")
+    eventCount: Int! @tag(name: "admin")
+    eventCountByOrganizer(organizerId: String!): Int! @tag(name: "organizer")
+    eventCountByCategory(categoryId: String!): Int! @tag(name: "admin")
+    eventCountByCity(city: String!): Int! @tag(name: "admin")
+    eventCountByStatus(status: EventStatus!): Int! @tag(name: "admin")
 
     # ========================================================================
     # EVENT STATISTICS QUERIES (ORGANIZER/ADMIN)
@@ -1523,16 +1523,16 @@ type Query {
     # Per-event statistics - organizers can see their own event stats
 
     # Per-event ticket statistics - for organizer dashboard
-    eventStatistics(eventId: ID!): EventTicketStatistics @auth(requires: ORGANIZER) @tag(name: "organizer")
-    ticketTierStatistics(eventId: ID!, tierId: ID!): TicketTierStats @auth(requires: ORGANIZER) @tag(name: "organizer")
+    eventStatistics(eventId: ID!): EventTicketStatistics @tag(name: "organizer")
+    ticketTierStatistics(eventId: ID!, tierId: ID!): TicketTierStats @tag(name: "organizer")
 
     # Platform-wide event statistics - ADMIN ONLY
-    eventStats: EventStats! @auth(requires: ADMIN) @tag(name: "admin")
+    eventStats: EventStats! @tag(name: "admin")
 
     # ADMIN - Catalog-owned pending approval-queue counts for the action-center
     # sidebar badges. One of three federated root fields (identity/catalog/booking)
     # the Apollo Router composes into the frontend's single PendingCounts query.
-    catalogPendingCounts: CatalogPendingCounts! @auth(requires: ADMIN) @tag(name: "admin")
+    catalogPendingCounts: CatalogPendingCounts! @tag(name: "admin")
 
     # ========================================================================
     # ADMIN EVENT MANAGEMENT QUERIES
@@ -1540,18 +1540,18 @@ type Query {
     # These queries are for managing events - approval workflow, drafts, etc.
 
     # General event list with filters - ADMIN dashboard
-    events(filter: EventFilterInput, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    events(filter: EventFilterInput, pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "admin")
 
     # Draft events - Organizer sees their own, admin sees all
-    draftEvents(organizerId: String!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    draftEvents(organizerId: String!, pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "organizer")
 
     # Approval workflow queries - ADMIN ONLY
-    pendingApprovalEvents(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
-    overdueApprovalEvents(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
-    approvedNotPublishedEvents(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
-    eventsByStatus(status: EventStatus!, pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
-    cancelledEvents(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
-    completedEvents(pagination: OffsetPaginationInput): EventOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    pendingApprovalEvents(pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "admin")
+    overdueApprovalEvents(pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "admin")
+    approvedNotPublishedEvents(pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "admin")
+    eventsByStatus(status: EventStatus!, pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "admin")
+    cancelledEvents(pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "admin")
+    completedEvents(pagination: OffsetPaginationInput): EventOffsetPage! @tag(name: "admin")
 
     # ========================================================================
     # LOCATION QUERIES
@@ -1604,7 +1604,7 @@ type Query {
     # ========================================================================
 
     # ADMIN - Get current platform configuration
-    platformConfiguration: PlatformConfiguration! @auth(requires: ADMIN) @tag(name: "admin")
+    platformConfiguration: PlatformConfiguration! @tag(name: "admin")
 
     # ========================================================================
     # APPROVAL TIMELINE QUERIES
@@ -1613,36 +1613,36 @@ type Query {
     # ========================================================================
 
     # ADMIN - View approval timeline for any event (approval workflow visibility)
-    approvalTimeline(eventId: String!): ApprovalTimeline @auth(requires: ADMIN) @tag(name: "admin")
+    approvalTimeline(eventId: String!): ApprovalTimeline @tag(name: "admin")
 
     # ---------------------------------------------------------------------------
     # ADMIN APPROVAL QUERIES - Offset pagination for admin dashboard tables
     # Approval workflow management is admin-only functionality
     # ---------------------------------------------------------------------------
-    approvalTimelines(filter: ApprovalTimelineFilterInput, pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
-    approvalTimelinesByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
-    pendingApprovalTimelines(pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
-    overdueApprovalTimelines(pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    approvalTimelines(filter: ApprovalTimelineFilterInput, pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @tag(name: "admin")
+    approvalTimelinesByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @tag(name: "admin")
+    pendingApprovalTimelines(pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @tag(name: "admin")
+    overdueApprovalTimelines(pagination: OffsetPaginationInput): ApprovalTimelineOffsetPage! @tag(name: "admin")
 
     # ========================================================================
     # APPROVAL ESCALATION QUERIES (Admin Only)
     # ========================================================================
 
     # ADMIN - Get specific escalation by ID
-    approvalEscalation(id: ID!): ApprovalEscalation @auth(requires: ADMIN) @tag(name: "admin")
+    approvalEscalation(id: ID!): ApprovalEscalation @tag(name: "admin")
 
     # ADMIN - Get active escalations (offset pagination for dashboard)
-    activeEscalations(pagination: OffsetPaginationInput): ApprovalEscalationOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    activeEscalations(pagination: OffsetPaginationInput): ApprovalEscalationOffsetPage! @tag(name: "admin")
 
     # ADMIN - Get escalations assigned to current admin (adminId from JWT - OWASP A01:2021)
-    myEscalations(pagination: OffsetPaginationInput): ApprovalEscalationOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    myEscalations(pagination: OffsetPaginationInput): ApprovalEscalationOffsetPage! @tag(name: "admin")
 
     # ========================================================================
     # APPROVAL STATISTICS QUERIES (Admin Only)
     # ========================================================================
 
     # ADMIN - Get approval workflow statistics for dashboard
-    approvalStats: ApprovalStats! @auth(requires: ADMIN) @tag(name: "admin")
+    approvalStats: ApprovalStats! @tag(name: "admin")
 
     # ========================================================================
     # TICKET TIER QUERIES
@@ -1654,7 +1654,7 @@ type Query {
     ticketTier(id: ID!): TicketTier @auth(requires: PUBLIC)
     # ORGANIZER/ADMIN - Include hidden tiers (draft tiers not visible to customers)
     # Organizers need to see all tiers including hidden ones when managing events
-    eventTicketTiers(eventId: ID!, includeHidden: Boolean = false): [TicketTier!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    eventTicketTiers(eventId: ID!, includeHidden: Boolean = false): [TicketTier!]! @tag(name: "organizer")
     # PUBLIC - Available tiers for customer ticket purchase (mobile app)
     availableTicketTiers(eventId: ID!): [TicketTier!]! @auth(requires: PUBLIC)
 
@@ -1665,9 +1665,9 @@ type Query {
     # ========================================================================
 
     # ORGANIZER/ADMIN - View event lifecycle state and history
-    eventLifecycle(eventId: String!): EventLifecycle @auth(requires: ORGANIZER) @tag(name: "organizer")
+    eventLifecycle(eventId: String!): EventLifecycle @tag(name: "organizer")
     # ORGANIZER/ADMIN - Determine valid status transitions for workflow UI
-    allowedStatusTransitions(eventId: String!): [EventStatus!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    allowedStatusTransitions(eventId: String!): [EventStatus!]! @tag(name: "organizer")
 
     # ========================================================================
     # EXPORT QUERIES
@@ -1676,9 +1676,9 @@ type Query {
     # ========================================================================
 
     # ADMIN - Export single event data for compliance/reporting
-    exportEventData(eventId: ID!, format: ExportFormat!): ReportExport! @auth(requires: ADMIN) @tag(name: "admin")
+    exportEventData(eventId: ID!, format: ExportFormat!): ReportExport! @tag(name: "admin")
     # ADMIN - Export filtered events report for platform analytics
-    exportEventsReport(filter: EventFilterInput!, format: ExportFormat!): ReportExport! @auth(requires: ADMIN) @tag(name: "admin")
+    exportEventsReport(filter: EventFilterInput!, format: ExportFormat!): ReportExport! @tag(name: "admin")
 }
 
 # ============================================================================
@@ -1698,31 +1698,31 @@ type Mutation {
     # ORGANIZER - Core event CRUD operations
     # NOTE: organizerId is extracted from JWT authentication, not passed as parameter
     # This prevents OWASP A01:2021 Broken Access Control vulnerabilities
-    createEvent(input: CreateEventInput!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    updateEvent(id: ID!, input: UpdateEventInput!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    deleteEvent(id: ID!): ID! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    createEvent(input: CreateEventInput!): Event! @tag(name: "organizer")
+    updateEvent(id: ID!, input: UpdateEventInput!): Event! @tag(name: "organizer")
+    deleteEvent(id: ID!): ID! @tag(name: "organizer")
     # ORGANIZER - Event publishing workflow
-    publishEvent(id: ID!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    unpublishEvent(id: ID!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    rescheduleEvent(input: RescheduleEventInput!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    publishEvent(id: ID!): Event! @tag(name: "organizer")
+    unpublishEvent(id: ID!): Event! @tag(name: "organizer")
+    rescheduleEvent(input: RescheduleEventInput!): Event! @tag(name: "organizer")
     # ORGANIZER - Event cancellation (triggers refund workflows)
-    cancelEvent(id: ID!, input: EventCancellationInput!): EventCancellationResponse! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    cancelEvent(id: ID!, input: EventCancellationInput!): EventCancellationResponse! @tag(name: "organizer") @tag(name: "admin")
     # INTERNAL - Auto-completion triggered by system when event date passes
     completeEvent(id: ID!): Event! @auth(requires: INTERNAL) @tag(name: "internal")
     # ORGANIZER - Duplicate event for recurring events workflow
-    duplicateEvent(eventId: ID!, newTitle: String!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    duplicateEvent(eventId: ID!, newTitle: String!): Event! @tag(name: "organizer")
     # ORGANIZER - Capacity and accessibility management
-    updateEventCapacity(eventId: ID!, newCapacity: Int!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    updateEventAccessibility(eventId: ID!, input: EventAccessibilityInput!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    updateEventCapacity(eventId: ID!, newCapacity: Int!): Event! @tag(name: "organizer")
+    updateEventAccessibility(eventId: ID!, input: EventAccessibilityInput!): Event! @tag(name: "organizer")
     # ADMIN - Featured events are platform decisions (homepage promotion)
-    featureEvent(eventId: ID!, featured: Boolean!): Event! @auth(requires: ADMIN) @tag(name: "admin")
+    featureEvent(eventId: ID!, featured: Boolean!): Event! @tag(name: "admin")
 
     # ========================================================================
     # PLATFORM CONFIGURATION MUTATIONS (Admin Only)
     # ========================================================================
 
     # ADMIN - Update platform configuration (SLA settings, escalation, notifications)
-    updatePlatformConfiguration(input: UpdatePlatformConfigurationInput!): PlatformConfiguration! @auth(requires: ADMIN) @tag(name: "admin")
+    updatePlatformConfiguration(input: UpdatePlatformConfigurationInput!): PlatformConfiguration! @tag(name: "admin")
 
     # ========================================================================
     # EVENT APPROVAL MUTATIONS
@@ -1731,20 +1731,20 @@ type Mutation {
 
     # ORGANIZER - Submit event for platform review
     # NOTE: organizerId is extracted from JWT authentication
-    submitEventForApproval(eventId: ID!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    submitEventForApproval(eventId: ID!): Event! @tag(name: "organizer")
     # ADMIN - Approval decisions are admin-only platform operations
     # NOTE: reviewerId/adminId extracted from JWT authentication (OWASP A01:2021 compliance)
-    approveEvent(eventId: ID!, comments: String): Event! @auth(requires: ADMIN) @tag(name: "admin")
-    rejectEvent(eventId: ID!, comments: String!): Event! @auth(requires: ADMIN) @tag(name: "admin")
-    requestEventChanges(eventId: ID!, comments: String!): Event! @auth(requires: ADMIN) @tag(name: "admin")
+    approveEvent(eventId: ID!, comments: String): Event! @tag(name: "admin")
+    rejectEvent(eventId: ID!, comments: String!): Event! @tag(name: "admin")
+    requestEventChanges(eventId: ID!, comments: String!): Event! @tag(name: "admin")
 
     # ADMIN - Reviewer assignment for approval workflow
-    assignEventReviewer(input: AssignReviewerInput!): ApprovalTimeline! @auth(requires: ADMIN) @tag(name: "admin")
-    unassignEventReviewer(eventId: ID!, reason: String): ApprovalTimeline! @auth(requires: ADMIN) @tag(name: "admin")
+    assignEventReviewer(input: AssignReviewerInput!): ApprovalTimeline! @tag(name: "admin")
+    unassignEventReviewer(eventId: ID!, reason: String): ApprovalTimeline! @tag(name: "admin")
 
     # ADMIN - Add internal comment to approval timeline (without status change)
     # NOTE: adminId extracted from JWT authentication (OWASP A01:2021 compliance)
-    addApprovalComment(eventId: ID!, comment: String!, isInternal: Boolean = true): ApprovalTimeline! @auth(requires: ADMIN) @tag(name: "admin")
+    addApprovalComment(eventId: ID!, comment: String!, isInternal: Boolean = true): ApprovalTimeline! @tag(name: "admin")
 
     # ========================================================================
     # ESCALATION MUTATIONS (Admin Only)
@@ -1752,13 +1752,13 @@ type Mutation {
     # ========================================================================
 
     # ADMIN - Acknowledge an escalation
-    acknowledgeEscalation(escalationId: ID!, notes: String): ApprovalEscalation! @auth(requires: ADMIN) @tag(name: "admin")
+    acknowledgeEscalation(escalationId: ID!, notes: String): ApprovalEscalation! @tag(name: "admin")
 
     # ADMIN - Resolve an escalation (must also approve/reject/request changes)
-    resolveEscalation(input: ResolveEscalationInput!): ApprovalEscalation! @auth(requires: ADMIN) @tag(name: "admin")
+    resolveEscalation(input: ResolveEscalationInput!): ApprovalEscalation! @tag(name: "admin")
 
     # ADMIN - Manually trigger escalation (for testing or manual override)
-    triggerManualEscalation(eventId: ID!, reason: String!, escalateTo: String!): ApprovalEscalation! @auth(requires: ADMIN) @tag(name: "admin")
+    triggerManualEscalation(eventId: ID!, reason: String!, escalateTo: String!): ApprovalEscalation! @tag(name: "admin")
 
     # ========================================================================
     # EVENT REMINDER MUTATIONS
@@ -1766,8 +1766,8 @@ type Mutation {
     # ========================================================================
 
     # ADMIN - Platform nudges organizers to publish their events
-    sendEventPublishReminder(eventId: ID!, triggeredBy: String!): Event! @auth(requires: ADMIN) @tag(name: "admin")
-    sendBulkEventPublishReminders(eventIds: [ID!]!, triggeredBy: String!): BulkReminderResponse! @auth(requires: ADMIN) @tag(name: "admin")
+    sendEventPublishReminder(eventId: ID!, triggeredBy: String!): Event! @tag(name: "admin")
+    sendBulkEventPublishReminders(eventIds: [ID!]!, triggeredBy: String!): BulkReminderResponse! @tag(name: "admin")
 
     # ========================================================================
     # TICKET TIER MUTATIONS
@@ -1775,12 +1775,12 @@ type Mutation {
     # ========================================================================
 
     # ORGANIZER - Ticket tier CRUD for event pricing structure
-    createTicketTier(eventId: ID!, input: CreateTicketTierInput!): TicketTier! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    updateTicketTier(tierId: ID!, input: UpdateTicketTierInput!): TicketTier! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    deleteTicketTier(tierId: ID!): ID! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    reorderTicketTiers(eventId: ID!, tierIds: [ID!]!): [TicketTier!]! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    activateTicketTier(tierId: ID!): TicketTier! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    deactivateTicketTier(tierId: ID!): TicketTier! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    createTicketTier(eventId: ID!, input: CreateTicketTierInput!): TicketTier! @tag(name: "organizer")
+    updateTicketTier(tierId: ID!, input: UpdateTicketTierInput!): TicketTier! @tag(name: "organizer")
+    deleteTicketTier(tierId: ID!): ID! @tag(name: "organizer")
+    reorderTicketTiers(eventId: ID!, tierIds: [ID!]!): [TicketTier!]! @tag(name: "organizer")
+    activateTicketTier(tierId: ID!): TicketTier! @tag(name: "organizer")
+    deactivateTicketTier(tierId: ID!): TicketTier! @tag(name: "organizer")
 
     # ========================================================================
     # EVENT CATEGORY MUTATIONS
@@ -1788,11 +1788,11 @@ type Mutation {
     # ========================================================================
 
     # ADMIN - Category CRUD for platform taxonomy
-    createEventCategory(input: CreateEventCategoryInput!): EventCategory! @auth(requires: ADMIN) @tag(name: "admin")
-    updateEventCategory(id: ID!, input: UpdateEventCategoryInput!): EventCategory! @auth(requires: ADMIN) @tag(name: "admin")
-    deleteEventCategory(id: ID!): ID! @auth(requires: ADMIN) @tag(name: "admin")
-    activateEventCategory(id: ID!): EventCategory! @auth(requires: ADMIN) @tag(name: "admin")
-    deactivateEventCategory(id: ID!): EventCategory! @auth(requires: ADMIN) @tag(name: "admin")
+    createEventCategory(input: CreateEventCategoryInput!): EventCategory! @tag(name: "admin")
+    updateEventCategory(id: ID!, input: UpdateEventCategoryInput!): EventCategory! @tag(name: "admin")
+    deleteEventCategory(id: ID!): ID! @tag(name: "admin")
+    activateEventCategory(id: ID!): EventCategory! @tag(name: "admin")
+    deactivateEventCategory(id: ID!): EventCategory! @tag(name: "admin")
 
     # ========================================================================
     # PROVINCE MUTATIONS
@@ -1800,9 +1800,9 @@ type Mutation {
     # ========================================================================
 
     # ADMIN - Province CRUD for regional data management
-    createProvince(input: CreateProvinceInput!): Province! @auth(requires: ADMIN) @tag(name: "admin")
-    updateProvince(id: ID!, input: UpdateProvinceInput!): Province! @auth(requires: ADMIN) @tag(name: "admin")
-    deleteProvince(id: ID!): ID! @auth(requires: ADMIN) @tag(name: "admin")
+    createProvince(input: CreateProvinceInput!): Province! @tag(name: "admin")
+    updateProvince(id: ID!, input: UpdateProvinceInput!): Province! @tag(name: "admin")
+    deleteProvince(id: ID!): ID! @tag(name: "admin")
 
     # ========================================================================
     # CITY MUTATIONS
@@ -1810,9 +1810,9 @@ type Mutation {
     # ========================================================================
 
     # ADMIN - City CRUD for geographic reference data
-    createCity(input: CreateCityInput!): City! @auth(requires: ADMIN) @tag(name: "admin")
-    updateCity(id: ID!, input: UpdateCityInput!): City! @auth(requires: ADMIN) @tag(name: "admin")
-    deleteCity(id: ID!): ID! @auth(requires: ADMIN) @tag(name: "admin")
+    createCity(input: CreateCityInput!): City! @tag(name: "admin")
+    updateCity(id: ID!, input: UpdateCityInput!): City! @tag(name: "admin")
+    deleteCity(id: ID!): ID! @tag(name: "admin")
 }
 
 # ============================================================================
@@ -1985,14 +1985,14 @@ extend type Query {
     two are different operations, not two spellings of one — `referenceData` is public and
     active-only, this is admin and shows everything.
     """
-    referenceDataAll(type: ReferenceType!, pagination: OffsetPaginationInput): ReferenceDataOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    referenceDataAll(type: ReferenceType!, pagination: OffsetPaginationInput): ReferenceDataOffsetPage! @tag(name: "admin")
 }
 
 extend type Mutation {
-    createReferenceData(input: CreateReferenceDataInput!): ReferenceData! @auth(requires: ADMIN) @tag(name: "admin")
-    updateReferenceData(id: ID!, input: UpdateReferenceDataInput!): ReferenceData! @auth(requires: ADMIN) @tag(name: "admin")
-    deleteReferenceData(id: ID!): ID! @auth(requires: ADMIN) @tag(name: "admin")
-    setReferenceDataActive(id: ID!, active: Boolean!): ReferenceData! @auth(requires: ADMIN) @tag(name: "admin")
+    createReferenceData(input: CreateReferenceDataInput!): ReferenceData! @tag(name: "admin")
+    updateReferenceData(id: ID!, input: UpdateReferenceDataInput!): ReferenceData! @tag(name: "admin")
+    deleteReferenceData(id: ID!): ID! @tag(name: "admin")
+    setReferenceDataActive(id: ID!, active: Boolean!): ReferenceData! @tag(name: "admin")
 }
 
 # ============================================================================
@@ -2094,6 +2094,44 @@ input UploadMediaInput {
     eventId: ID
 }
 
+# The two-step upload for a picture up to 20 MB: ask for a grant, send the file to the address in it
+# (nothing passes through GraphQL), then complete. The picture is not registered, and so not served,
+# until its bytes have been read and found to be the JPEG, PNG or WebP that was declared.
+input RequestMediaUploadInput {
+    fileName: String!
+    contentType: String!
+    sizeBytes: Int!
+}
+
+type UploadHeader {
+    name: String!
+    value: String!
+}
+
+type MediaUploadTicket {
+    uploadToken: String!
+    uploadUrl: String!
+    method: String!
+    headers: [UploadHeader!]!
+    expiresAt: DateTime!
+    maxBytes: Int!
+}
+
+input CompleteMediaUploadInput {
+    uploadToken: String!
+    title: String
+    altText: String
+    eventId: ID
+}
+
+input CompleteStockImageUploadInput {
+    uploadToken: String!
+    purpose: StockImagePurpose!
+    categoryCode: String
+    title: String
+    altText: String
+}
+
 input UpdateMediaInput {
     title: String
     altText: String
@@ -2146,48 +2184,52 @@ extend type Query {
     # For a signed-in buyer: events in the categories of the events they hold tickets for, ranked by
     # tickets sold, never an event they already hold. Falls back to trending. The buyer's events are
     # named by the caller (their ticket list is booking's); only their categories are read here.
-    recommendedEvents(basedOnEventIds: [ID!], first: Int = 10): [EventRecommendation!]! @auth(requires: CUSTOMER)
+    recommendedEvents(basedOnEventIds: [ID!], first: Int = 10): [EventRecommendation!]! @auth(requires: AUTHENTICATED)
 
     # ── Organizer: own events with a cursor ────────────────────────────────
     # Events of the caller's organizations, newest first, narrowed by the filter.
-    myEventsConnection(filter: OrganizerEventFilterInput, pagination: CursorPaginationInput): EventConnection! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    myEventsConnection(filter: OrganizerEventFilterInput, pagination: CursorPaginationInput): EventConnection! @tag(name: "organizer")
 
     # ── Organizer: media library ───────────────────────────────────────────
-    myMedia(filter: MediaFilterInput, pagination: CursorPaginationInput): MediaAssetConnection! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    myMedia(filter: MediaFilterInput, pagination: CursorPaginationInput): MediaAssetConnection! @tag(name: "organizer")
 
     # ── Stock images ───────────────────────────────────────────────────────
-    stockImages(filter: StockImageFilterInput, pagination: CursorPaginationInput): StockImageConnection! @auth(requires: ORGANIZER) @tag(name: "organizer") @tag(name: "admin")
+    stockImages(filter: StockImageFilterInput, pagination: CursorPaginationInput): StockImageConnection! @tag(name: "organizer") @tag(name: "admin")
 
     # ── Admin: moderation queue over every organization's uploads ──────────
-    mediaAssets(filter: MediaModerationFilterInput, pagination: OffsetPaginationInput): MediaAssetOffsetPage! @auth(requires: ADMIN) @tag(name: "admin")
+    mediaAssets(filter: MediaModerationFilterInput, pagination: OffsetPaginationInput): MediaAssetOffsetPage! @tag(name: "admin")
 }
 
 extend type Mutation {
     # ── Hidden tiers ───────────────────────────────────────────────────────
     # The hidden tier of a published event that this code opens, or TIER_UNKNOWN for a wrong code
     # (never which part was wrong). Five wrong codes in fifteen minutes stop further tries.
-    unlockTierWithAccessCode(eventId: ID!, accessCode: String!): TicketTier! @auth(requires: CUSTOMER)
+    unlockTierWithAccessCode(eventId: ID!, accessCode: String!): TicketTier! @auth(requires: AUTHENTICATED)
 
     # ── Scheduled publication ──────────────────────────────────────────────
     # Stops a scheduled publication: the event stays APPROVED and publishAt is cleared.
-    cancelScheduledPublish(eventId: ID!): Event! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    cancelScheduledPublish(eventId: ID!): Event! @tag(name: "organizer")
 
     # ── Organizer: media library ───────────────────────────────────────────
-    uploadMedia(input: UploadMediaInput!): MediaAsset! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    updateMedia(id: ID!, input: UpdateMediaInput!): MediaAsset! @auth(requires: ORGANIZER) @tag(name: "organizer")
-    deleteMedia(id: ID!): ID! @auth(requires: ORGANIZER) @tag(name: "organizer")
+    uploadMedia(input: UploadMediaInput!): MediaAsset! @tag(name: "organizer")
+    requestMediaUpload(input: RequestMediaUploadInput!): MediaUploadTicket! @tag(name: "organizer")
+    completeMediaUpload(input: CompleteMediaUploadInput!): MediaAsset! @tag(name: "organizer")
+    updateMedia(id: ID!, input: UpdateMediaInput!): MediaAsset! @tag(name: "organizer")
+    deleteMedia(id: ID!): ID! @tag(name: "organizer")
 
     # ── Admin: moderation ──────────────────────────────────────────────────
-    flagMedia(id: ID!, reason: String!): MediaAsset! @auth(requires: ADMIN) @tag(name: "admin")
-    removeMedia(id: ID!, reason: String!): MediaAsset! @auth(requires: ADMIN) @tag(name: "admin")
-    restoreMedia(id: ID!): MediaAsset! @auth(requires: ADMIN) @tag(name: "admin")
+    flagMedia(id: ID!, reason: String!): MediaAsset! @tag(name: "admin")
+    removeMedia(id: ID!, reason: String!): MediaAsset! @tag(name: "admin")
+    restoreMedia(id: ID!): MediaAsset! @tag(name: "admin")
 
     # Replaces an event's banner with an uploaded or stock image, or clears it (mediaId null).
     # The reason is kept in the audit trail of the image.
-    overrideEventBanner(eventId: ID!, mediaId: ID, reason: String!): Event! @auth(requires: ADMIN) @tag(name: "admin")
+    overrideEventBanner(eventId: ID!, mediaId: ID, reason: String!): Event! @tag(name: "admin")
 
     # ── Admin: stock library ───────────────────────────────────────────────
-    uploadStockImage(input: UploadStockImageInput!): StockImage! @auth(requires: ADMIN) @tag(name: "admin")
-    updateStockImage(id: ID!, input: UpdateStockImageInput!): StockImage! @auth(requires: ADMIN) @tag(name: "admin")
-    deleteStockImage(id: ID!): ID! @auth(requires: ADMIN) @tag(name: "admin")
+    uploadStockImage(input: UploadStockImageInput!): StockImage! @tag(name: "admin")
+    requestStockImageUpload(input: RequestMediaUploadInput!): MediaUploadTicket! @tag(name: "admin")
+    completeStockImageUpload(input: CompleteStockImageUploadInput!): StockImage! @tag(name: "admin")
+    updateStockImage(id: ID!, input: UpdateStockImageInput!): StockImage! @tag(name: "admin")
+    deleteStockImage(id: ID!): ID! @tag(name: "admin")
 }

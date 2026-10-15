@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.domain.enums.ExportFormat;
@@ -9,7 +11,6 @@ import com.pml.catalog.web.graphql.dto.ReportExportDto;
 import com.pml.catalog.service.ExportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 /**
@@ -32,7 +33,7 @@ public class ExportQueryResolver {
      * @return export result with download URL
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.EVENT_REPORT_CREATE)
     public Mono<ReportExportDto> exportEventData(
             @InputArgument String eventId,
             @InputArgument ExportFormat format) {
@@ -49,7 +50,7 @@ public class ExportQueryResolver {
      * @return export result with download URL
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.EVENT_REPORT_CREATE)
     public Mono<ReportExportDto> exportEventsReport(
             @InputArgument EventFilterInput filter,
             @InputArgument ExportFormat format) {

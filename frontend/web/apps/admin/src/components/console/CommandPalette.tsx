@@ -10,7 +10,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { useRouter } from 'next/navigation';
 import { Dialog, TextField } from '@pml.tickets/shared/components/m3';
 import { useAdminEvents, useAdminUsers } from '@pml.tickets/shared';
-import { MODULES, canOpenModule, tabsFor, type StaffRole } from '@/config/navigation';
+import { MODULES, canOpenModule, tabsFor } from '@/config/navigation';
 import { humanize } from '@/lib/format';
 
 export interface PaletteItem {
@@ -25,12 +25,12 @@ const MIN_QUERY = 2;
 const PER_GROUP_QUERY = 6;
 const PER_GROUP_EMPTY = 12;
 
-export function pageItems(roles: readonly StaffRole[]): PaletteItem[] {
-  const items: PaletteItem[] = MODULES.filter((m) => canOpenModule(roles, m.id)).map((m) => {
-    const first = tabsFor(roles, m.id)[0];
+export function pageItems(permissions: readonly string[]): PaletteItem[] {
+  const items: PaletteItem[] = MODULES.filter((m) => canOpenModule(permissions, m.id)).map((m) => {
+    const first = tabsFor(permissions, m.id)[0];
     return { id: `page-${m.id}`, group: 'Pages', title: m.label, subtitle: 'Go to page', href: first ? `${m.path}/${first.id}` : m.path };
   });
-  if (canOpenModule(roles, 'config')) {
+  if (canOpenModule(permissions, 'config')) {
     items.push({ id: 'page-roles', group: 'Pages', title: 'Roles and access', subtitle: 'Platform configuration', href: '/config/roles' });
   }
   return items;
@@ -62,7 +62,7 @@ function EventResults({ q, onItems }: { q: string; onItems: (items: PaletteItem[
   return null;
 }
 
-export function CommandPalette({ open, onClose, roles }: { open: boolean; onClose: () => void; roles: readonly StaffRole[] }) {
+export function CommandPalette({ open, onClose, permissions }: { open: boolean; onClose: () => void; permissions: readonly string[] }) {
   const router = useRouter();
   const listId = useId();
   const [q, setQ] = useState('');
@@ -86,7 +86,7 @@ export function CommandPalette({ open, onClose, roles }: { open: boolean; onClos
     }
   }, [open]);
 
-  const all = useMemo(() => [...pageItems(roles), ...(debounced.length >= MIN_QUERY ? [...users, ...events] : [])], [roles, debounced, users, events]);
+  const all = useMemo(() => [...pageItems(permissions), ...(debounced.length >= MIN_QUERY ? [...users, ...events] : [])], [permissions, debounced, users, events]);
   const items = useMemo(() => filterItems(all, q), [all, q]);
   const idx = Math.min(sel, Math.max(0, items.length - 1));
 
@@ -127,8 +127,8 @@ export function CommandPalette({ open, onClose, roles }: { open: boolean; onClos
             setSel(0);
           }}
         />
-        {search && canOpenModule(roles, 'users') ? <UserResults q={debounced} onItems={setUsers} /> : null}
-        {search && canOpenModule(roles, 'events') ? <EventResults q={debounced} onItems={setEvents} /> : null}
+        {search && canOpenModule(permissions, 'users') ? <UserResults q={debounced} onItems={setUsers} /> : null}
+        {search && canOpenModule(permissions, 'events') ? <EventResults q={debounced} onItems={setEvents} /> : null}
         <div id={listId} role="listbox" aria-label="Results" className="adm-cmdk__list">
           {items.length === 0 ? (
             <p className="adm-note">No matches. Try a page name, a person or an event.</p>

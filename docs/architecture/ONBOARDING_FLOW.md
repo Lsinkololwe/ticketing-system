@@ -263,7 +263,7 @@ mutation ApproveOrganizer($profileId: ID!) {
 │      └── Add user to /organizations/{slug}/owners                               │
 │                                                                                 │
 │   6. Publish Events                                                             │
-│      ├── OrganizerApprovedEvent → Azure Service Bus                             │
+│      ├── OrganizerApprovedEvent → RabbitMQ                             │
 │      └── Notify user via email/push                                             │
 │                                                                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘

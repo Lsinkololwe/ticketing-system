@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
@@ -147,7 +149,7 @@ public class BankAccountMutationResolver {
      * @return VerifyBankAccountMutationResponse with success status and verified account
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.BANK_ACCOUNT_APPROVE)
     public Mono<BankAccount> verifyBankAccount(
             @InputArgument String id
     ) {

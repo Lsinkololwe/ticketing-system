@@ -1,6 +1,9 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.domain.model.MediaAsset;
@@ -22,7 +25,6 @@ import com.pml.catalog.web.graphql.dto.StockImageFilterInput;
 import com.pml.shared.error.FieldViolation;
 import com.pml.shared.error.ValidationRefusal;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -35,7 +37,7 @@ public class MediaQueryResolver {
     private final MediaService media;
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.MEDIA_MANAGE)
     public Mono<MediaAssetConnection> myMedia(@InputArgument MediaFilterInput filter,
                                               @InputArgument CursorPaginationInput pagination) {
         CursorPaginationInput page = forward(pagination);
@@ -43,7 +45,7 @@ public class MediaQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.MEDIA_MANAGE)
     public Mono<StockImageConnection> stockImages(@InputArgument StockImageFilterInput filter,
                                                   @InputArgument CursorPaginationInput pagination) {
         CursorPaginationInput page = forward(pagination);
@@ -53,7 +55,7 @@ public class MediaQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.MEDIA_MODERATION_VIEW)
     public Mono<MediaAssetOffsetPage> mediaAssets(@InputArgument MediaModerationFilterInput filter,
                                                   @InputArgument OffsetPaginationInput pagination) {
         return media.moderationQueue(filter, pagination).map(result -> new MediaAssetOffsetPage(

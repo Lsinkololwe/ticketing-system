@@ -1,8 +1,6 @@
 # =====================================================================
-# LOCAL / DEV profile  —  Azure Service Bus EMULATOR
+# LOCAL / DEV profile  —  the docker-resources dev stack (MongoDB, Redis, RabbitMQ, Keycloak, Temporal)
 # See booking-service/application-local.yml for full notes.
-# Well-known emulator string (NOT a real credential); localhost + non-TLS.
-# Swap to real Azure with SPRING_PROFILES_ACTIVE=prod (no code changes).
 # =====================================================================
 spring:
   # The GraphiQL console, on for local development only. A value in a file called `local` is
@@ -24,12 +22,14 @@ spring:
     redis:
       host: localhost
       port: 6379
-  cloud:
-    azure:
-      servicebus:
-        connection-string: "Endpoint=sb://localhost:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;"
-    stream:
-      default-binder: servicebus
+  # RabbitMQ: the shared dev broker in docker-resources (dev_rabbitmq), this system's own virtual host
+  # and its own user. Development values, which is why they sit in a file called `local`.
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: ticketing
+    password: ticketing_dev_password
+    virtual-host: ticketing
 
 # ---------------------------------------------------------------------------
 # Credentials for local development

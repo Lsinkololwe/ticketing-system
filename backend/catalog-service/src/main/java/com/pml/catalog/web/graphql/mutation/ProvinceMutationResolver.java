@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.mutation;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.CreateProvinceInput;
@@ -9,7 +11,6 @@ import com.pml.catalog.domain.model.Province;
 import com.pml.catalog.service.ProvinceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import jakarta.validation.Valid;
@@ -36,7 +37,7 @@ public class ProvinceMutationResolver {
     private final java.time.Clock clock;
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LOCATION_MANAGE)
     public Mono<Province> createProvince(
             @Valid @InputArgument CreateProvinceInput input
     ) {
@@ -48,7 +49,7 @@ public class ProvinceMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LOCATION_MANAGE)
     public Mono<Province> updateProvince(
             @InputArgument String id,
             @Valid @InputArgument UpdateProvinceInput input
@@ -63,7 +64,7 @@ public class ProvinceMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LOCATION_MANAGE)
     public Mono<String> deleteProvince(
             @InputArgument String id
     ) {

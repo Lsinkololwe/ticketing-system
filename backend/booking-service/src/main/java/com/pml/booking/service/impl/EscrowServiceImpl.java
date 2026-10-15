@@ -4,6 +4,7 @@ import com.pml.shared.constants.EscrowStatus;
 import com.pml.booking.domain.model.EventEscrowAccount;
 import com.pml.booking.repository.EventEscrowAccountRepository;
 import com.pml.booking.security.TenantAccessGuard;
+import com.pml.shared.security.Permission;
 import com.pml.booking.service.EscrowService;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.security.tenancy.CurrentTenantScope;
@@ -38,9 +39,6 @@ import java.util.Collection;
 @Service
 @RequiredArgsConstructor
 public class EscrowServiceImpl implements EscrowService {
-
-    /** Permission a caller needs to read an organization's escrow. */
-    private static final String ESCROW_READ = "escrow:read";
 
     private final EventEscrowAccountRepository escrowRepository;
 
@@ -322,7 +320,7 @@ public class EscrowServiceImpl implements EscrowService {
         // The guard runs BEFORE the query, not as a filter on its results.
         // Checking afterwards would already have read another tenant's rows into
         // memory, and any logging or error message built from them leaks.
-        return tenantAccessGuard.requireAccess(actorUserId, organizationId, ESCROW_READ)
+        return tenantAccessGuard.requireAccess(actorUserId, organizationId, Permission.FINANCIAL_VIEW)
                 .flatMapMany(escrowRepository::findByOrganizationId);
     }
 

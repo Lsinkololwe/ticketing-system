@@ -62,7 +62,7 @@ class TestLayerLintTest {
         // most-expensive-first rule below would hold only by luck.
         Map<String, List<String>> ordered = new LinkedHashMap<>();
         ordered.put("L5", List.of("Providers", "WireMock", "Concurrency"));
-        ordered.put("L2", List.of("MongoReplicaSet", "MongoStandalone", "Testcontainers", "RedisNode",
+        ordered.put("L2", List.of("MongoReplicaSet", "MongoStandalone", "Testcontainers", "RedisNode", "RabbitNode",
                 "TemporalDevServer"));
         // Layer 3 is the saga layer, and a durable workflow is the platform's saga: the
         // time-skipping test environment runs one end to end against stubbed activities.

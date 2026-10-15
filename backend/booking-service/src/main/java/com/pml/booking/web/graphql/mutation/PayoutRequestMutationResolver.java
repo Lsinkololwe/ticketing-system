@@ -1,5 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
@@ -145,14 +148,14 @@ public class PayoutRequestMutationResolver {
 
     /** Freezes a payout before any money moves; approval, retry and settlement wait for the release. */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> holdPayoutRequest(@InputArgument String payoutRequestId, @InputArgument String reason) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(actor -> payoutProcess.hold(payoutRequestId, actor, reason));
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> releasePayoutHold(@InputArgument String payoutRequestId, @InputArgument String note) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(actor -> payoutProcess.release(payoutRequestId, actor, note));
@@ -160,7 +163,7 @@ public class PayoutRequestMutationResolver {
 
     /** Approve a payout request; the approver must not be the requester. */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_APPROVE)
     public Mono<PayoutRequest> approvePayoutRequest(@InputArgument String payoutRequestId, @InputArgument String notes,
                                                      @InputArgument String idempotencyKey) {
         Map<String, Object> fingerprinted = new HashMap<>();
@@ -173,7 +176,7 @@ public class PayoutRequestMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> rejectPayoutRequest(@InputArgument String payoutRequestId, @InputArgument String rejectionReason) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(rejectedBy -> payoutProcess.reject(payoutRequestId, rejectedBy, rejectionReason));
@@ -184,7 +187,7 @@ public class PayoutRequestMutationResolver {
      * operation answers with the request when it is already settling and refuses otherwise.
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> processPayoutRequest(@InputArgument String payoutRequestId) {
         return payoutProcess.current(payoutRequestId)
                 .flatMap(request -> request.getStatus() == PayoutRequestStatus.PROCESSING
@@ -195,14 +198,14 @@ public class PayoutRequestMutationResolver {
 
     /** Finance confirms a manual bank transfer with the bank's reference. */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> completePayoutRequest(@InputArgument String payoutRequestId, @InputArgument String bankReference) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(completedBy -> payoutProcess.confirmTransfer(payoutRequestId, completedBy, bankReference));
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.PAYOUT_REQUEST)
     public Mono<PayoutRequest> cancelPayoutRequest(@InputArgument String payoutRequestId, @InputArgument String reason) {
         return tenantReads.payoutRequestForCaller(payoutRequestId)
                 .then(SecurityContextUtils.requireCurrentUserId())
@@ -214,7 +217,7 @@ public class PayoutRequestMutationResolver {
     // ========================================================================
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> markPayoutForReview(@InputArgument String payoutRequestId,
                                                    @InputArgument String issueType,
                                                    @InputArgument String notes) {
@@ -223,7 +226,7 @@ public class PayoutRequestMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> resolvePayoutIssue(@InputArgument String payoutRequestId,
                                                   @InputArgument String resolutionType,
                                                   @InputArgument String notes) {
@@ -239,7 +242,7 @@ public class PayoutRequestMutationResolver {
      * reported as failed, as before; an empty or oversized list is refused outright, never trimmed.
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<BulkPayoutOperationResponse> bulkRetryFailedPayouts(@InputArgument List<String> payoutRequestIds,
                                                                     @InputArgument String idempotencyKey) {
         if (payoutRequestIds == null || payoutRequestIds.isEmpty() || payoutRequestIds.size() > MAX_BULK_PAYOUTS) {
@@ -261,7 +264,7 @@ public class PayoutRequestMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<BulkPayoutOperationResponse> bulkMarkPayoutsForReview(@InputArgument List<String> payoutRequestIds,
                                                                       @InputArgument String issueType,
                                                                       @InputArgument String notes) {
@@ -272,7 +275,7 @@ public class PayoutRequestMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> escalatePayoutRequest(@InputArgument String payoutRequestId, @InputArgument String reason) {
         log.info("Escalating payout request: {} with reason: {}", payoutRequestId, reason);
         return payoutRecoveryService.escalatePayoutRequest(payoutRequestId, reason);
@@ -286,7 +289,7 @@ public class PayoutRequestMutationResolver {
      * the wrong payout.
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_MANAGE)
     public Mono<PayoutRequest> retryPayoutRequest(@InputArgument String payoutRequestId, @InputArgument String idempotencyKey) {
         String fingerprint = Fingerprint.of(mapper, Map.of("payoutRequestId", payoutRequestId), Fingerprint.CLIENT_VARYING);
         return SecurityContextUtils.requireCurrentUserId()

@@ -1,6 +1,7 @@
 package com.pml.identity.web.graphql.mutation;
 
 import org.springframework.validation.annotation.Validated;
+import com.pml.shared.security.RequiresPermission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -31,7 +32,7 @@ public class OrganizationAdminMutationResolver {
 
     /** Sets this organization's own commission, replacing the platform default for it. */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.ORGANIZATION_COMMISSION_CONFIGURE)
     @FailClosedOnRevocation("admin.setOrganizationCommissionRate")
     public Mono<Organization> setOrganizationCommissionRate(
             @InputArgument String organizationId,
@@ -41,7 +42,7 @@ public class OrganizationAdminMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.BANK_ACCOUNT_APPROVE)
     @FailClosedOnRevocation("admin.rejectPayoutAccount")
     public Mono<Organization> rejectPayoutAccount(@InputArgument String organizationId, @InputArgument String reason) {
         return actor().flatMap(adminId -> admin.rejectPayoutAccount(organizationId, reason, adminId));
@@ -49,21 +50,21 @@ public class OrganizationAdminMutationResolver {
 
     /** The same operation under the name the admin bank-accounts table uses. */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.BANK_ACCOUNT_APPROVE)
     @FailClosedOnRevocation("admin.rejectBankAccount")
     public Mono<Organization> rejectBankAccount(@InputArgument String organizationId, @InputArgument String reason) {
         return rejectPayoutAccount(organizationId, reason);
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.BANK_ACCOUNT_APPROVE)
     @FailClosedOnRevocation("admin.suspendBankAccount")
     public Mono<Organization> suspendBankAccount(@InputArgument String organizationId, @InputArgument String reason) {
         return actor().flatMap(adminId -> admin.suspendPayoutAccount(organizationId, reason, adminId));
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.BANK_ACCOUNT_APPROVE)
     @FailClosedOnRevocation("admin.reinstateBankAccount")
     public Mono<Organization> reinstateBankAccount(@InputArgument String organizationId) {
         return actor().flatMap(adminId -> admin.reinstatePayoutAccount(organizationId, adminId));

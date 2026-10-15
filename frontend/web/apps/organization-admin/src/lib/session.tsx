@@ -39,6 +39,19 @@ export function useSession(): SessionState {
   return state;
 }
 
+/**
+ * Asks the BFF to re-read the person's roles now, so an approval that has just happened is in the
+ * session without signing out. Resolves true when the session was refreshed.
+ */
+export async function refreshSession(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Sign-in entry: the BFF starts the Keycloak authorization-code + PKCE flow. */
 export function signInUrl(next = '/dashboard'): string {
   return `/api/auth/start?next=${encodeURIComponent(next)}`;

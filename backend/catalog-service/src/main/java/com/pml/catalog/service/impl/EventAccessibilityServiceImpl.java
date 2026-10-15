@@ -33,7 +33,7 @@ public class EventAccessibilityServiceImpl implements EventAccessibilityService 
      * An event the caller is entitled to act on, or {@code EVENT_UNKNOWN}.
      *
      * <p>{@code updateEventAccessibility}'s
-     * {@code @PreAuthorize("hasAnyRole('ADMIN','ORGANIZER')")} checks only the role, and the
+     * {@code @RequiresTenantPermission(EVENT_EDIT)} checks only the role, and the
      * {@code eventId} it writes to is caller-supplied. Accessibility copy is what a venue's disabled
      * attendees rely on to decide whether they can attend at all, so an organizer
      * able to rewrite a rival's — announcing step-free access that does not exist,

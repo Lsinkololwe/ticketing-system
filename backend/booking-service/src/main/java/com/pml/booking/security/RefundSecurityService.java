@@ -57,4 +57,20 @@ public class RefundSecurityService {
         }
         return null;
     }
+
+    /** Holds the permission on the platform, or requested the refund with this document id. */
+    public Mono<Boolean> permissionOrRefundRequestOwner(Authentication authentication, String permissionCode, String id) {
+        if (com.pml.shared.security.PermissionGuards.holdsPermission(authentication, permissionCode)) {
+            return Mono.just(true);
+        }
+        return isRefundRequestOwner(id, authentication);
+    }
+
+    /** Holds the permission on the platform, or requested the refund with this business request id. */
+    public Mono<Boolean> permissionOrRefundRequestOwnerByRequestId(Authentication authentication, String permissionCode, String requestId) {
+        if (com.pml.shared.security.PermissionGuards.holdsPermission(authentication, permissionCode)) {
+            return Mono.just(true);
+        }
+        return isRefundRequestOwnerByRequestId(requestId, authentication);
+    }
 }

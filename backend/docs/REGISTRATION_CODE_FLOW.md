@@ -173,7 +173,7 @@ This document traces the complete registration flow from when a user submits the
 │           │                                                                     │
 │           ▼                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────────┐  │
-│  │ STEP 10: Publish UserRegisteredEvent to Azure Service Bus                │  │
+│  │ STEP 10: Publish UserRegisteredEvent to RabbitMQ                │  │
 │  │ Method: publishUserRegisteredEvent() (Lines 394-417)                     │  │
 │  └───────────────────────────────────────────────────────────────────────────┘│
 │           │                                                                     │
@@ -192,7 +192,7 @@ This document traces the complete registration flow from when a user submits the
 │           │   );                                                               │
 │           │                                                                     │
 │           │ Line 408: streamBridge.send("userOutput-out-0", event)            │
-│           │   → Azure Service Bus topic: "identity-events"                     │
+│           │   → RabbitMQ topic: "identity-events"                     │
 │           │                                                                     │
 │           ▼                                                                     │
 │  ┌─────────────────────────────────────────────────────────────────────────┐  │
@@ -878,7 +878,7 @@ public record UserRegisteredEvent(
 }
 ```
 
-**Published to Azure Service Bus**:
+**Published to RabbitMQ**:
 - **Topic**: `identity-events` (via Spring Cloud Stream binding `userOutput-out-0`)
 - **Message**:
 ```json
@@ -983,7 +983,7 @@ public record UserRegisteredEvent(
 | **Step 5** | KeycloakSyncController | REST request | Calls `UserSyncService.syncUserFromKeycloak()` |
 | **Step 6-7** | UserSyncServiceImpl | Keycloak UserRepresentation | MongoDB User document with `EnumSet<UserType>` roles |
 | **Step 8-9** | Auto-create Profile | User with ORGANIZER role | Organization document (status: DRAFT) |
-| **Step 10** | Event Publisher | User document | Azure Service Bus event with `roles: ["CUSTOMER", "ORGANIZER"]` |
+| **Step 10** | Event Publisher | User document | RabbitMQ event with `roles: ["CUSTOMER", "ORGANIZER"]` |
 
 ---
 

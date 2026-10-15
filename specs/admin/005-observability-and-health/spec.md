@@ -298,9 +298,9 @@ Nineteen alerts. Each carries a runbook URL; a definition without one fails the 
 
 | Service | Required — readiness fails | Optional — degraded |
 |---|---|---|
-| catalog | MongoDB | Redis, Service Bus |
-| booking | MongoDB | Redis, Service Bus, PawaPay |
-| identity | MongoDB, Keycloak | Redis, Service Bus, WhatsApp, SMS, SMTP |
+| catalog | MongoDB | Redis, RabbitMQ |
+| booking | MongoDB | Redis, RabbitMQ, PawaPay |
+| identity | MongoDB, Keycloak | Redis, RabbitMQ, WhatsApp, SMS, SMTP |
 | gateway | Apollo Router | Redis |
 
 MongoDB is booking's only required datastore: the outbox lives there too, staged in the

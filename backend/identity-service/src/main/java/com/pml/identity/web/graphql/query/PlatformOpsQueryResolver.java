@@ -1,6 +1,8 @@
 package com.pml.identity.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.enums.AlertSeverity;
@@ -26,20 +28,20 @@ public class PlatformOpsQueryResolver {
 
     /** Probes every dependency now and returns what each answered. Also opens or closes the matching alerts. */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_VIEW)
     public Flux<ServiceHealth> serviceHealth() {
         return health.check();
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_VIEW)
     public Flux<SystemAlert> systemAlerts(@InputArgument AlertStatus status, @InputArgument AlertSeverity severity) {
         return ops.alerts(status, severity);
     }
 
     /** Every announcement, newest first (administrators). */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_VIEW)
     public Flux<SystemAnnouncement> systemAnnouncements() {
         return ops.all();
     }

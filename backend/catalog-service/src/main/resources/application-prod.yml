@@ -1,8 +1,7 @@
 # =====================================================================
-# PROD profile  —  Real Azure Service Bus via Microsoft Entra managed identity.
-# OWASP: no secrets (managed identity, connection-string blank => no SAS),
-# least-privilege RBAC (Data Sender/Receiver), TLS 1.2+, Key Vault for secrets.
-# See docs/MESSAGING_AND_SERVICE_BUS.html.
+# PROD profile  —  every external dependency comes from the environment.
+# Secrets are never in this file: RabbitMQ and the rest are read from the environment's secret
+# store, over TLS, with a least-privilege user per service.
 # =====================================================================
 spring:
   # Self-hosted Temporal: the platform's own Temporal frontend and namespace.
@@ -16,12 +15,18 @@ spring:
       credential:
         managed-identity-enabled: ${AZURE_MANAGED_IDENTITY_ENABLED:true}
         client-id: ${AZURE_CLIENT_ID:}
-      servicebus:
-        namespace: ${AZURE_SERVICEBUS_NAMESPACE}
-        connection-string: ""
       keyvault:
         secret:
           enabled: ${AZURE_KEYVAULT_ENABLED:true}
           endpoint: ${AZURE_KEYVAULT_ENDPOINT:}
-    stream:
-      default-binder: servicebus
+  # RabbitMQ over TLS. Host, virtual host and credentials come from the environment's secret store
+  # and have no defaults; a missing value stops startup naming the property.
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5671}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: ${RABBITMQ_VHOST}
+    ssl:
+      enabled: true
+      verify-hostname: true

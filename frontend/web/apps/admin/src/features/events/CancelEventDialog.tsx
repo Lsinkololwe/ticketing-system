@@ -41,7 +41,7 @@ export function CancelEventDialog({ event, onClose, onDone }: { event: CancelTar
             <Button variant="text" onClick={onClose}>
               Close
             </Button>
-            {canOpenModule(staff.roles, 'finance') ? (
+            {canOpenModule(staff.permissions, 'finance') ? (
               <Button variant="filled" onClick={() => router.push('/finance/payouts')}>
                 Open payouts
               </Button>

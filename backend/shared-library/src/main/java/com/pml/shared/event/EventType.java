@@ -77,21 +77,22 @@ public enum EventType {
     /**
      * The payload key whose value orders this event, or empty when it is commutative.
      *
-     * <p>Service Bus delivers unordered across a topic, so where order
-     * matters it is bought with a session id — and only for that key. A session id shared more
-     * widely than the aggregate that needs it serialises messages that had no reason to wait,
-     * which turns a topic into a queue of one.</p>
+     * <p>A topic exchange delivers to each subscription's queue in publish order, but a queue with
+     * several concurrent consumers hands messages out of order. Where order matters, the subscription
+     * that carries the event is consumed by one consumer at a time (see {@link EventTopology}), and
+     * this key names what is being kept in order, so a later change can narrow that to the one
+     * aggregate without changing the wire.</p>
      */
-    public java.util.Optional<String> sessionKey() {
-        return java.util.Optional.ofNullable(SESSION_KEYS.get(this));
+    public java.util.Optional<String> orderingKey() {
+        return java.util.Optional.ofNullable(ORDERING_KEYS.get(this));
     }
 
-    /** True when this event type is ordered by session, so its subscriptions must be session-enabled. */
+    /** True when this event type is ordered, so a subscription carrying it is consumed one message at a time. */
     public boolean isOrdered() {
-        return sessionKey().isPresent();
+        return orderingKey().isPresent();
     }
 
-    private static final Map<EventType, String> SESSION_KEYS = Map.ofEntries(
+    private static final Map<EventType, String> ORDERING_KEYS = Map.ofEntries(
             Map.entry(CATALOG_TICKET_TIER_PUBLISHED, "tierId"),
             Map.entry(CATALOG_TICKET_TIER_CAPACITY_CHANGED, "tierId"),
             Map.entry(BOOKING_TICKET_TRANSFERRED, "ticketId"),

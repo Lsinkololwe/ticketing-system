@@ -1,5 +1,6 @@
 package com.pml.identity.organization;
 
+import com.pml.identity.authorization.DecisionContextLoader;
 import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.EventAccessGrant;
@@ -84,8 +85,9 @@ class PermissionResolutionSingleImplementationTest {
         grants = mock(EventAccessGrantRepository.class);
         organizationService = mock(OrganizationService.class);
         when(users.findById(any(String.class))).thenReturn(Mono.empty());
-        resolution = new PermissionResolutionServiceImpl(users, members, organizationRepository, grants,
-                TestClock.frozenAt(NOW));
+        resolution = new PermissionResolutionServiceImpl(
+                new DecisionContextLoader(users, members, organizationRepository, grants, TestClock.frozenAt(NOW)),
+                members, grants, TestClock.frozenAt(NOW));
         authorization = new AuthorizationServiceImpl(resolution, mock(OrganizationMemberService.class), organizationService);
     }
 
@@ -223,11 +225,13 @@ class PermissionResolutionSingleImplementationTest {
     void adapterOnlyDelegates() throws IOException {
         Assumptions.assumeTrue(Files.isRegularFile(RESOLUTION) && Files.isRegularFile(AUTHORIZATION),
                 "identity sources not present");
-        String resolutionSource = COMMENTS.matcher(Files.readString(RESOLUTION)).replaceAll("");
+        String resolutionSource = COMMENTS.matcher(Files.readString(RESOLUTION)
+                + Files.readString(RESOLUTION.resolveSibling("../../authorization/PermissionDecider.java").normalize())
+                + Files.readString(RESOLUTION.resolveSibling("../../authorization/DecisionContextLoader.java").normalize()))
+                .replaceAll("");
         String adapterSource = COMMENTS.matcher(Files.readString(AUTHORIZATION)).replaceAll("");
 
-        List<String> mappingCalls = List.of("grantedByPlatformRoles(", ".hasPermission(", ".permissions(",
-                ".canPerform(", ".isValid(", "OrganizationRole", "EventRole");
+        List<String> mappingCalls = List.of("PlatformRole.grantedBy(", ".grants(", ".canPerform(", ".isValid(");
         for (String call : mappingCalls) {
             assertThat(resolutionSource).as("the single implementation owns " + call).contains(call);
             assertThat(adapterSource).as("the adapter must not repeat " + call).doesNotContain(call);

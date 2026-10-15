@@ -6,6 +6,8 @@ com.pml.shared.security.revocation.RevocationAutoConfiguration
 com.pml.shared.graphql.GraphQLSecurityAutoConfiguration
 com.pml.shared.graphql.auth.AuthDirectiveAutoConfiguration
 com.pml.shared.error.ErrorContractAutoConfiguration
+com.pml.shared.event.EventTransportAutoConfiguration
+com.pml.shared.event.EventTopologyAutoConfiguration
 com.pml.shared.event.OutboxAutoConfiguration
 com.pml.shared.infrastructure.temporal.TemporalGatewayAutoConfiguration
 com.pml.shared.config.PlatformJacksonAutoConfiguration
@@ -17,3 +19,4 @@ com.pml.shared.security.tenancy.RemoteTenantMembershipsAutoConfiguration
 com.pml.shared.security.tenancy.PlatformWideAuditDeliveryAutoConfiguration
 com.pml.shared.security.ServiceSecurityAutoConfiguration
 com.pml.shared.security.revocation.RemoteRevocationStoreAutoConfiguration
+com.pml.shared.security.PermissionGuardAutoConfiguration

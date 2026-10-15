@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { hrefOf, pendingFor, primaryRole } from '@/lib/pending';
+import { permissionsOfRoles } from '@pml.tickets/shared/generated/permission-codes';
 
 const counts = {
   'pending-approvals': 6,
@@ -12,7 +13,7 @@ const counts = {
 
 describe('pendingFor', () => {
   it('lists every queue with a count for an admin, in prototype order', () => {
-    const items = pendingFor(['ADMIN'], counts);
+    const items = pendingFor(permissionsOfRoles(['ADMIN']), counts);
     expect(items.map((i) => i.label)).toEqual([
       'Organizer applications',
       'Events awaiting approval',
@@ -23,7 +24,7 @@ describe('pendingFor', () => {
   });
 
   it('hides approvals from finance roles and zero-count queues', () => {
-    const items = pendingFor(['FINANCE'], counts);
+    const items = pendingFor(permissionsOfRoles(['FINANCE']), counts);
     expect(items.map((i) => i.label)).toEqual(['Payout requests pending']);
   });
 

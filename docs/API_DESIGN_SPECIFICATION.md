@@ -31,7 +31,7 @@
 | **Client API** | GraphQL | Mobile apps, Web apps, Admin dashboard |
 | **Webhooks** | REST | Payment provider callbacks (pawaPay) |
 | **Internal** | REST | Service-to-service communication |
-| **Events** | Azure Service Bus | Async cross-service events |
+| **Events** | RabbitMQ | Async cross-service events |
 
 ### 1.2 Services & Ports
 
@@ -87,7 +87,7 @@
                   └────────────────┼────────────────┘
                                    │
                     ┌──────────────▼──────────────┐
-                    │      AZURE SERVICE BUS      │
+                    │      RABBITMQ      │
                     │  (Topics & Subscriptions)   │
                     └─────────────────────────────┘
 ```

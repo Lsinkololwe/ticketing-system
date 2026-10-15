@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -53,7 +55,7 @@ public class RefundRequestMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.REFUND_MANAGE)
     public Mono<RefundRequest> approveRefundRequest(@InputArgument String refundRequestId, @InputArgument String reviewComments,
                                                      @InputArgument String idempotencyKey) {
         Map<String, Object> fingerprinted = new HashMap<>();
@@ -66,7 +68,7 @@ public class RefundRequestMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.REFUND_MANAGE)
     public Mono<RefundRequest> rejectRefundRequest(@InputArgument String refundRequestId, @InputArgument String rejectionReason) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(reviewerId -> refundProcess.reject(refundRequestId, reviewerId, rejectionReason));
@@ -74,7 +76,7 @@ public class RefundRequestMutationResolver {
 
     /** The refund is sent once it is approved; this approves a PENDING request and answers any other as it stands. */
     @DgsMutation
-    @PreAuthorize("hasRole('FINANCE')")
+    @RequiresPermission(Permission.REFUND_APPROVE)
     public Mono<RefundRequest> processRefundRequest(@InputArgument String refundRequestId) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(processedBy -> refundProcess.process(refundRequestId, processedBy));
@@ -85,7 +87,7 @@ public class RefundRequestMutationResolver {
     // ========================================================================
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.REFUND_MANAGE)
     public Mono<RefundRequest> createAdminRefundRequest(@InputArgument String ticketId,
                                                         @InputArgument String reason,
                                                         @InputArgument Boolean bypassApproval,
@@ -120,7 +122,7 @@ public class RefundRequestMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.REFUND_MANAGE)
     public Mono<BulkOperationResponse> bulkApproveRefunds(@InputArgument List<String> refundRequestIds) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(reviewerId -> refundProcess.bulkApprove(refundRequestIds, reviewerId))

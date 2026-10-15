@@ -42,7 +42,7 @@ public class PermissionModelMigrationService {
 
     /** Collections dropped outright, under their registry names and the names they had before them. */
     static final List<String> RETIRED_COLLECTIONS = List.of(
-            IdentityCollections.PERMISSIONS, IdentityCollections.ROLE_PERMISSIONS,
+            "identity_permissions", "identity_role_permissions",
             "identity_role_permission_changes", "permissions", "role_permissions");
 
     /** Every upper-case permission name identity has stored, and the catalogue permission it meant. */

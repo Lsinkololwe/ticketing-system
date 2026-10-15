@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.pml.shared.constants.EscrowStatus;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
@@ -64,7 +66,7 @@ public class EscrowMutationResolver {
      * Admin operation for manual status management.
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_MANAGE)
     public Mono<EventEscrowAccount> updateEscrowAccountStatus(
             @InputArgument String accountId,
             @InputArgument EscrowStatus status,
@@ -80,7 +82,7 @@ public class EscrowMutationResolver {
      * Admin operation for extending hold periods or dispute resolution.
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_MANAGE)
     public Mono<EventEscrowAccount> lockEscrowAccount(
             @InputArgument String accountId,
             @InputArgument Instant lockUntil,
@@ -96,7 +98,7 @@ public class EscrowMutationResolver {
      * Admin operation for early payout eligibility.
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_MANAGE)
     public Mono<EventEscrowAccount> unlockEscrowAccount(
             @InputArgument String accountId,
             @InputArgument String reason
@@ -111,7 +113,7 @@ public class EscrowMutationResolver {
      * Admin operation for manual transition after hold period.
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_MANAGE)
     public Mono<EventEscrowAccount> markPayoutEligible(@InputArgument String accountId) {
         log.info("GraphQL mutation: markPayoutEligible({})", accountId);
 
@@ -125,7 +127,7 @@ public class EscrowMutationResolver {
      * Admin operation for accounts with zero balance.
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_MANAGE)
     public Mono<EventEscrowAccount> closeEscrowAccount(
             @InputArgument String accountId,
             @InputArgument String reason

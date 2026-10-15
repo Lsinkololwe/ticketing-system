@@ -26,7 +26,7 @@ public class EventRankingQueryResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('CUSTOMER', 'ORGANIZER', 'ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public Mono<List<EventRecommendation>> recommendedEvents(@InputArgument List<String> basedOnEventIds,
                                                              @InputArgument Integer first) {
         return ranking.recommended(basedOnEventIds, first == null ? 10 : first);

@@ -13,11 +13,11 @@ import org.springframework.validation.annotation.Validated;
  *
  * @param collection the per-service outbox collection — {@code catalog_outbox},
  *                   {@code booking_outbox} or {@code identity_outbox}
- * @param binding    the Spring Cloud Stream output binding the drain publishes to
+ * @param exchange   the topic exchange the drain publishes to — {@code catalog-events}, {@code booking-events} or {@code identity-events}
  */
 @Validated
 @ConfigurationProperties(prefix = "platform.outbox")
-public record OutboxProperties(@NotBlank String collection, @NotBlank String binding,
+public record OutboxProperties(@NotBlank String collection, @NotBlank String exchange,
                                java.time.Duration drainInterval) {
 
     /** The drain reads this through its @Scheduled expression; the field documents the default. */

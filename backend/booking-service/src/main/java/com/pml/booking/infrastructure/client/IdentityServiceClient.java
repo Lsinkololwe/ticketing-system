@@ -28,11 +28,13 @@ import java.util.List;
 public class IdentityServiceClient {
 
     private final WebClient webClient;
+    private final com.pml.shared.security.authorization.IdentityAuthorizationClient authorization;
 
     public IdentityServiceClient(
             InternalServiceWebClients clients,
             @Value("${services.identity.url:http://localhost:8083}") String identityServiceUrl) {
         this.webClient = clients.to(identityServiceUrl);
+        this.authorization = new com.pml.shared.security.authorization.IdentityAuthorizationClient(webClient);
     }
 
     /**
@@ -46,23 +48,8 @@ public class IdentityServiceClient {
      * @return Mono with shared organization response
      */
     public Mono<SharedOrganizationResponse> checkSameOrganization(String requestingUserId, String targetOrganizerId) {
-        log.debug("Checking same organization: requestingUserId={}, targetOrganizerId={}",
-                requestingUserId, targetOrganizerId);
-
-        return webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/api/internal/authorization/check-same-organization")
-                        .queryParam("requestingUserId", requestingUserId)
-                        .queryParam("targetOrganizerId", targetOrganizerId)
-                        .build())
-                .retrieve()
-                .bodyToMono(SharedOrganizationResponse.class)
-                .doOnSuccess(result -> log.debug("Same organization check: shares={}, orgId={}",
-                        result.sharesOrganization(), result.sharedOrganizationId()))
-                .onErrorResume(e -> {
-                    log.error("Failed to check same organization: {}", e.getMessage());
-                    return Mono.just(SharedOrganizationResponse.noSharedOrganization());
-                });
+        return authorization.sameOrganization(requestingUserId, targetOrganizerId)
+                .map(r -> new SharedOrganizationResponse(r.sharesOrganization(), r.sharedOrganizationId()));
     }
 
     /**
@@ -72,24 +59,9 @@ public class IdentityServiceClient {
      * @return Mono with user organizations response
      */
     public Mono<UserOrganizationsResponse> getUserOrganizations(String userId) {
-        log.debug("Getting user organizations: userId={}", userId);
-
-        return webClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/api/internal/authorization/user-organizations")
-                        .queryParam("userId", userId)
-                        .build())
-                .retrieve()
-                .bodyToMono(UserOrganizationsResponse.class)
-                .doOnSuccess(result -> log.debug("User has {} organizations", result.organizations().size()))
-                .doOnError(e -> log.error("Failed to get user organizations: {}", e.getMessage()));
-                // The error is NOT swallowed into an empty list. Doing so made an
-                // identity-service outage indistinguishable from "this user
-                // belongs to no organization" — and callers that scope money by
-                // the result would then render an empty dashboard during an
-                // outage, which reads as "you have no money" rather than as a
-                // fault. Callers decide how to fail; they cannot decide if the
-                // difference has already been erased.
+        return authorization.userOrganizations(userId)
+                .map(r -> new UserOrganizationsResponse(r.organizations().stream()
+                        .map(m -> new OrganizationMembershipInfo(m.organizationId(), m.role(), m.isActive())).toList()));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -110,18 +82,7 @@ public class IdentityServiceClient {
      * @return the authorization result; denied on any transport/service error
      */
     public Mono<AuthorizationResult> checkAuthorization(AuthorizationRequest request) {
-        log.debug("Checking authorization: permission={}, ownerId={}",
-                request.getRequiredPermission(), request.getOrganizationOwnerId());
-
-        return webClient.post()
-                .uri("/api/internal/authorization/check")
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(AuthorizationResult.class)
-                .onErrorResume(e -> {
-                    log.error("Authorization check failed (denying by default): {}", e.getMessage());
-                    return Mono.just(AuthorizationResult.denied("Authorization service unavailable"));
-                });
+        return authorization.check(request);
     }
 
     /**

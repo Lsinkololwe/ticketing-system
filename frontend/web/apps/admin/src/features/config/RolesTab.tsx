@@ -3,7 +3,7 @@
 import { Card, CardHeader, DataTable, FormCell, FormGrid, List, ListItem, StatusPill } from '@pml.tickets/shared/components/m3';
 import { useStaff } from '@/components/console';
 import { RoleChip } from '@/components/console/RoleChip';
-import { MODULES, ROLE_DESCRIPTIONS, ROLE_LABELS, STAFF_ROLES, canOpenModule, type StaffRole } from '@/config/navigation';
+import { MODULES, ROLE_DESCRIPTIONS, ROLE_LABELS, STAFF_ROLES, canOpenModule, grantsOf, type StaffRole } from '@/config/navigation';
 import { ACTIONS } from '@/lib/permissions';
 import { ACTION_LABELS, MATRIX_ACTIONS } from './catalogue';
 import { useReferenceOptions, type ReferenceOption } from '@pml.tickets/shared/api/graphql/shared/reference';
@@ -51,11 +51,11 @@ export function RolesTab() {
   const { roles } = useStaff();
   const orgRoles = useReferenceOptions('ORGANIZATION_ROLE');
   const eventRoles = useReferenceOptions('EVENT_ROLE');
-  const areas: MatrixRow[] = MODULES.map((m) => ({ id: m.id, label: m.label, has: (r) => canOpenModule([r], m.id) }));
+  const areas: MatrixRow[] = MODULES.map((m) => ({ id: m.id, label: m.label, has: (r) => canOpenModule(grantsOf(r), m.id) }));
   const actions: MatrixRow[] = MATRIX_ACTIONS.map((k) => ({
     id: k,
     label: ACTION_LABELS[k],
-    has: (r) => (ACTIONS[k] as readonly StaffRole[]).includes(r),
+    has: (r) => grantsOf(r).includes(ACTIONS[k]),
   }));
 
   return (

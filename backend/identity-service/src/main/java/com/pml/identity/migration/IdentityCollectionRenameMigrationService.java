@@ -37,8 +37,6 @@ public class IdentityCollectionRenameMigrationService {
             "team_invitations", IdentityCollections.TEAM_INVITATIONS,
             "ownership_transfers", IdentityCollections.OWNERSHIP_TRANSFERS,
             "event_access_grants", IdentityCollections.EVENT_ACCESS_GRANTS,
-            "permissions", IdentityCollections.PERMISSIONS,
-            "role_permissions", IdentityCollections.ROLE_PERMISSIONS,
             "verification_documents", IdentityCollections.VERIFICATION_DOCUMENTS,
             "notifications", IdentityCollections.NOTIFICATIONS,
             "notification_preferences", IdentityCollections.NOTIFICATION_PREFERENCES,

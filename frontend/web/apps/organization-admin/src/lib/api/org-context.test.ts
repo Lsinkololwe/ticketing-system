@@ -1,23 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { capabilitiesFor } from './org-context';
+import { capabilitiesFromPermissions } from './org-context';
 
-describe('capabilitiesFor', () => {
-  it('gives nothing without a membership', () => {
-    expect(capabilitiesFor(null)).toMatchObject({ isOwner: false, canWriteEvents: false, canRefund: false, canViewFinance: false });
+describe('capabilitiesFromPermissions', () => {
+  it('gives nothing without permissions', () => {
+    expect(capabilitiesFromPermissions([])).toMatchObject({ isOwner: false, canWriteEvents: false, canRefund: false, canViewFinance: false });
+    expect(capabilitiesFromPermissions(undefined).canViewTeam).toBe(false);
   });
-  it('treats only the owner as owner', () => {
-    expect(capabilitiesFor('OWNER').isOwner).toBe(true);
-    for (const r of ['ADMIN', 'MANAGER', 'MARKETER', 'CONTRIBUTOR'] as const) expect(capabilitiesFor(r).isOwner).toBe(false);
+  it('treats only the holder of organization:transfer as owner', () => {
+    expect(capabilitiesFromPermissions(['organization:transfer']).isOwner).toBe(true);
+    expect(capabilitiesFromPermissions(['organization:edit', 'team:role']).isOwner).toBe(false);
   });
-  it('lets managers see finance and admins request payouts only when the organization allows it', () => {
-    expect(capabilitiesFor('MANAGER').canViewFinance).toBe(false);
-    expect(capabilitiesFor('MANAGER', { managersCanViewFinancials: true }).canViewFinance).toBe(true);
-    expect(capabilitiesFor('ADMIN').canRequestPayout).toBe(false);
-    expect(capabilitiesFor('ADMIN', { adminsCanRequestPayouts: true }).canRequestPayout).toBe(true);
-    expect(capabilitiesFor('OWNER').canRequestPayout).toBe(true);
+  it('follows the permissions the platform reported, not the role name', () => {
+    expect(capabilitiesFromPermissions(['event:view']).canViewFinance).toBe(false);
+    expect(capabilitiesFromPermissions(['financial:view']).canViewFinance).toBe(true);
+    expect(capabilitiesFromPermissions(['payout:request']).canRequestPayout).toBe(true);
   });
-  it('limits marketers and contributors', () => {
-    expect(capabilitiesFor('MARKETER')).toMatchObject({ canWriteEvents: false, canRefund: false, canManageMedia: true, canNotify: false });
-    expect(capabilitiesFor('CONTRIBUTOR')).toMatchObject({ canManageMedia: false, canManageTeam: false });
+  it('limits a marketer-shaped set', () => {
+    const marketer = ['event:view', 'attendee:view', 'analytics:view', 'promotion:manage', 'media:manage', 'team:view'];
+    expect(capabilitiesFromPermissions(marketer)).toMatchObject({ canWriteEvents: false, canRefund: false, canManageMedia: true, canNotify: false, canManageTeam: false });
   });
 });

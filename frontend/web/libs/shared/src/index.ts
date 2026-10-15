@@ -44,6 +44,7 @@
 // ============== Auth (Client-Safe Only) ==============
 // NOTE: the server-side BFF must be imported from '@pml.tickets/shared/auth/bff'.
 export * from './auth';
+export * from './generated/permission-codes';
 
 // ============== Shared Components ==============
 // Auth components (PermissionGate), UI components (SectionError)

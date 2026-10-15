@@ -21,6 +21,7 @@ import static com.pml.shared.security.Permission.EVENT_EDIT;
 import static com.pml.shared.security.Permission.EVENT_PUBLISH;
 import static com.pml.shared.security.Permission.EVENT_VIEW;
 import static com.pml.shared.security.Permission.FINANCIAL_VIEW;
+import static com.pml.shared.security.Permission.MEDIA_MANAGE;
 import static com.pml.shared.security.Permission.ORGANIZATION_BILLING;
 import static com.pml.shared.security.Permission.ORGANIZATION_DELETE;
 import static com.pml.shared.security.Permission.ORGANIZATION_EDIT;
@@ -54,9 +55,9 @@ public enum OrganizationRole {
 
     CONTRIBUTOR(EnumSet.of(EVENT_VIEW, ATTENDEE_VIEW, TICKET_SCAN, ORGANIZATION_VIEW, TEAM_VIEW)),
 
-    MARKETER(EnumSet.of(ANALYTICS_VIEW, PROMOTION_MANAGE), CONTRIBUTOR),
+    MARKETER(EnumSet.of(ANALYTICS_VIEW, PROMOTION_MANAGE, MEDIA_MANAGE), CONTRIBUTOR),
 
-    MANAGER(EnumSet.of(EVENT_CREATE, EVENT_EDIT, EVENT_PUBLISH, ANALYTICS_VIEW, PROMOTION_MANAGE), CONTRIBUTOR),
+    MANAGER(EnumSet.of(EVENT_CREATE, EVENT_EDIT, EVENT_PUBLISH, ANALYTICS_VIEW, PROMOTION_MANAGE, MEDIA_MANAGE), CONTRIBUTOR),
 
     ADMIN(EnumSet.of(EVENT_DELETE, EVENT_CANCEL, TICKET_REFUND, TEAM_INVITE, TEAM_REMOVE, TEAM_ROLE,
             EVENT_ACCESS_GRANT, ORGANIZATION_EDIT, BANK_MANAGE, FINANCIAL_VIEW), MANAGER, MARKETER),

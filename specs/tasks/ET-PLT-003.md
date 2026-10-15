@@ -1,5 +1,8 @@
 # ET-PLT-003 · Event contract — tasks
 
+> **Superseded 2026-10-14 (D-62).** Azure Service Bus was replaced by RabbitMQ. The record below describes what was built on Service Bus and is kept as history; the live design is in the spec (`_platform/003-event-contract/spec.md`).
+
+
 > **Spec** [`specs/_platform/003-event-contract/spec.md`](../_platform/003-event-contract/spec.md) · **Wave 0** · `blocked_by:` ET-PLT-001, ET-PLT-002
 > **Screens** — none. Dead-letter depth surfaces later in [`ET-ADM-005`](ET-ADM-005.md) and the recovery queue in [`ET-ADM-003`](ET-ADM-003.md).
 > **Verify** `mvn -q -f backend test -Dgroups=ET-PLT-003` · `mvn -q -f backend verify -Dgroups=ET-PLT-003`
@@ -199,7 +202,7 @@ parses the table and fails if the two disagree.
 
 ### BE-4 · Topics, subscriptions and `eventType` SQL filters
 - **Spec** R4 · **§5** T4 · **depends** BE-2 · **parallel-safe** no *(shared infrastructure — coordinate)*
-- **Files** `../docker-resources/servicebus/`, `backend/*/src/main/resources/application.yml`
+- **Files** `backend/shared-library/.../event/EventTopology.java`, `EventTopologyAutoConfiguration.java`
 - Three topics: `catalog-events`, `booking-events`, `identity-events`.
 - **Acceptance** each subscription receives **only** the rows its §4 filter names.
 

@@ -202,7 +202,7 @@ public interface EscrowService {
 
     /**
      * Create a new escrow account with minimal parameters.
-     * Used when event is published via Service Bus message.
+     * Used when an event is published, via the broker message.
      *
      * @param eventId     The event ID
      * @param organizerId The organizer's user ID

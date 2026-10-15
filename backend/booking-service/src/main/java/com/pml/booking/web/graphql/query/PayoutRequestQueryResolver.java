@@ -1,6 +1,9 @@
 package com.pml.booking.web.graphql.query;
 
 import com.pml.booking.security.TenantReads;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import java.time.Duration;
 
 import com.netflix.graphql.dgs.DgsComponent;
@@ -63,7 +66,7 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRequest(id: ID!): PayoutRequest
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.FINANCIAL_VIEW)
     public Mono<PayoutRequest> payoutRequest(@InputArgument String id) {
         log.debug("GraphQL query: payoutRequest(id={})", id);
         Objects.requireNonNull(id, "Payout request ID is required");
@@ -75,7 +78,7 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRequestByRequestId(requestId: String!): PayoutRequest
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.FINANCIAL_VIEW)
     public Mono<PayoutRequest> payoutRequestByRequestId(@InputArgument String requestId) {
         log.debug("GraphQL query: payoutRequestByRequestId({})", requestId);
         Objects.requireNonNull(requestId, "Request ID is required");
@@ -91,7 +94,7 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRequests(filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRequestOffsetPage> payoutRequests(
             @InputArgument PayoutRequestFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
@@ -110,7 +113,7 @@ public class PayoutRequestQueryResolver {
      * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService for multi-tenant isolation.</p>
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrFinancialView(authentication, 'ADMIN,FINANCE', #organizerId)")
+    @PreAuthorize("@organizationSecurityService.permissionOrFinancialView(authentication, 'payout:view', #organizerId)")
     public Mono<PayoutRequestOffsetPage> payoutRequestsByOrganizer(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination
@@ -126,7 +129,7 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRequestsByEvent(eventId: String!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'payout:view', #eventId)")
     public Mono<PayoutRequestOffsetPage> payoutRequestsByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
@@ -142,7 +145,7 @@ public class PayoutRequestQueryResolver {
      * Schema: pendingPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRequestOffsetPage> pendingPayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
@@ -155,7 +158,7 @@ public class PayoutRequestQueryResolver {
      * Schema: failedPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRequestOffsetPage> failedPayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
@@ -174,7 +177,7 @@ public class PayoutRequestQueryResolver {
      * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService for multi-tenant isolation.</p>
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrFinancialView(authentication, 'ADMIN,FINANCE', #organizerId)")
+    @PreAuthorize("@organizationSecurityService.permissionOrFinancialView(authentication, 'payout:view', #organizerId)")
     public Mono<PayoutRequestStats> payoutRequestStats(@InputArgument String organizerId) {
         log.debug("GraphQL query: payoutRequestStats(organizerId={})", organizerId);
 
@@ -220,7 +223,7 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRequestsForReview(reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRequestOffsetPage> payoutRequestsForReview(
             @InputArgument String reviewStatus,
             @InputArgument OffsetPaginationInput pagination
@@ -246,7 +249,7 @@ public class PayoutRequestQueryResolver {
      * Schema: stuckPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRequestOffsetPage> stuckPayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
@@ -271,7 +274,7 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRequestsByIssueType(issueType: PayoutIssueType!, pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRequestOffsetPage> payoutRequestsByIssueType(
             @InputArgument String issueType,
             @InputArgument OffsetPaginationInput pagination
@@ -298,7 +301,7 @@ public class PayoutRequestQueryResolver {
      * Schema: payoutRecoverySummary: PayoutRecoverySummary!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRecoverySummary> payoutRecoverySummary() {
         log.debug("GraphQL query: payoutRecoverySummary");
         return payoutRecoveryService.getRecoverySummary();
@@ -309,7 +312,7 @@ public class PayoutRequestQueryResolver {
      * Schema: retryablePayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRequestOffsetPage> retryablePayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {
@@ -325,7 +328,7 @@ public class PayoutRequestQueryResolver {
      * Schema: recentlyResolvedPayoutRequests(pagination: OffsetPaginationInput): PayoutRequestOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYOUT_VIEW)
     public Mono<PayoutRequestOffsetPage> recentlyResolvedPayoutRequests(
             @InputArgument OffsetPaginationInput pagination
     ) {

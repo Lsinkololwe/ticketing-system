@@ -3,7 +3,7 @@
 A complete specification of the event ticketing platform, **written greenfield**: every
 spec describes a capability to be built from zero on the stack pinned in
 [CONVENTIONS.md](CONVENTIONS.md) — Java 21, Spring Boot 3.5.4 WebFlux, Netflix DGS 10.5
-over Apollo Federation 2.9, reactive MongoDB, Azure Service Bus and Keycloak 26.
+over Apollo Federation 2.9, reactive MongoDB, RabbitMQ and Keycloak 26.
 
 Specs describe the target system, not the current one. They make no reference to what
 exists today, carry no migration tasks, and cite no line numbers in the working tree. A
@@ -240,7 +240,7 @@ MongoDB and PostgreSQL initialisation are all in the sibling repository:
 ├── apollo-router/ticketing/     router-local.yaml, router-graphos.yaml,
 │                                router-production.yaml, supergraph.yaml,
 │                                supergraph-static.yaml, compose-supergraph.sh
-├── keycloak/  mongodb/  postgres/  prometheus/  grafana/  servicebus/
+├── keycloak/  mongodb/  postgres/  rabbitmq (broker config)/
 └── docker-compose.yml
 ```
 

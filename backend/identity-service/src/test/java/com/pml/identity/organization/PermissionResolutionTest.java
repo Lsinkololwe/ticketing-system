@@ -2,6 +2,7 @@ package com.pml.identity.organization;
 
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoClients;
+import com.pml.identity.authorization.DecisionContextLoader;
 import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.EventAccessGrant;
@@ -97,7 +98,9 @@ class PermissionResolutionTest {
         for (OrganizationRole role : OrganizationRole.values()) {
             member("user-" + role.name().toLowerCase(), role, MemberStatus.ACTIVE);
         }
-        resolution = new PermissionResolutionServiceImpl(users, members, organizations, grants, TestClock.frozenAt(NOW));
+        resolution = new PermissionResolutionServiceImpl(
+                new DecisionContextLoader(users, members, organizations, grants, TestClock.frozenAt(NOW)),
+                members, grants, TestClock.frozenAt(NOW));
     }
 
     @Test
@@ -216,11 +219,11 @@ class PermissionResolutionTest {
         var viaRole = resolution.getEffectivePermissions("user-marketer", ORG, null).block();
         var nothing = resolution.getEffectivePermissions("user-nobody", ORG, null).block();
 
-        assertThat(viaGrant.source()).isEqualTo("EVENT");
+        assertThat(viaGrant.source().name()).isEqualTo("EVENT");
         assertThat(viaGrant.permissions()).containsExactlyInAnyOrderElementsOf(EventRole.CHECK_IN.permissions());
-        assertThat(viaRole.source()).isEqualTo("ORGANIZATION");
+        assertThat(viaRole.source().name()).isEqualTo("ORGANIZATION");
         assertThat(viaRole.permissions()).contains(PROMOTION_MANAGE);
-        assertThat(nothing.source()).isEqualTo("NONE");
+        assertThat(nothing.source().name()).isEqualTo("NONE");
         assertThat(nothing.permissions()).isEmpty();
     }
 

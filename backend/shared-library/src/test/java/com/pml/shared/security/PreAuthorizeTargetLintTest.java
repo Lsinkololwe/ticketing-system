@@ -46,6 +46,11 @@ class PreAuthorizeTargetLintTest {
         for (String module : List.of("booking-service", "catalog-service", "identity-service")) {
             List<Path> sources = mainSources(module);
             Map<String, String> beanSource = new HashMap<>();
+            // Beans the shared library installs in every service.
+            Path guards = BACKEND.resolve("shared-library/src/main/java/com/pml/shared/security/PermissionGuards.java");
+            if (Files.isRegularFile(guards)) {
+                beanSource.put("permissionGuards", Files.readString(guards));
+            }
             for (Path file : sources) {
                 String text = Files.readString(file);
                 Matcher named = NAMED_BEAN.matcher(text);

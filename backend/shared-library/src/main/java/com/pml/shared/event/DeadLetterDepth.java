@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Depth is a broker fact. A process that counted only its own dead letters would read zero after
  * a restart while the queue was full, and would miss every message dead-lettered by a sibling
  * replica — the alert would be quietest exactly when the platform was worst. So the gauge takes
- * a supplier and the service wires the Service Bus management client to it. Until one is
+ * a supplier and the service wires the broker's management API to it. Until one is
  * registered a subscription has no depth gauge at all, which is visibly absent rather than
  * confidently wrong.
  */

@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -15,7 +17,6 @@ import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
@@ -39,14 +40,14 @@ public class OrganizerOpsResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresTenantPermission(Permission.ANALYTICS_VIEW)
     public Mono<List<SalesAnalytics.SalesPoint>> salesOverTime(@InputArgument String eventId, @InputArgument Instant from,
                                                                @InputArgument Instant to, @InputArgument SalesBuckets.Bucket bucket) {
         return analytics.salesOverTime(eventId, from, to, bucket);
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresTenantPermission(Permission.ANALYTICS_VIEW)
     public Mono<List<SalesAnalytics.HeatCell>> purchasesByDayAndHour(@InputArgument Instant from, @InputArgument Instant to,
                                                                      @InputArgument String eventId,
                                                                      @InputArgument String organizationId) {
@@ -54,14 +55,14 @@ public class OrganizerOpsResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN', 'SUPER_ADMIN')")
+    @RequiresTenantPermission(Permission.ATTENDEE_VIEW)
     public Mono<Integer> ticketHolderAudience(@InputArgument String eventId, @InputArgument HolderMessage.Segment segment,
                                               @InputArgument String ticketTierId) {
         return messaging.audience(eventId, segment, ticketTierId);
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN', 'SUPER_ADMIN')")
+    @RequiresTenantPermission(Permission.ATTENDEE_VIEW)
     public Mono<HolderMessagePage> ticketHolderMessages(@InputArgument String eventId, @Valid @InputArgument OffsetPaginationInput pagination) {
         return messaging.history(eventId, pagination).map(slice -> new HolderMessagePage(slice.data(), slice.pagination()));
     }
@@ -71,7 +72,7 @@ public class OrganizerOpsResolver {
      * per sender and per organization each day; the organizer is told how many people it reached, never who.
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN', 'SUPER_ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<HolderMessage> messageTicketHolders(@InputArgument String eventId, @Valid @InputArgument MessageTicketHoldersInput input) {
         return messaging.send(eventId, input.subject(), input.body(), input.segment(), input.ticketTierId());
     }

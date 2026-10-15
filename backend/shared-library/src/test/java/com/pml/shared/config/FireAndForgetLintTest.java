@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * failure.
  *
  * <h2>Not every subscription is a defect</h2>
- * Establishing a long-lived consumer <em>is</em> subscribing. {@code AzureServiceBusConfig} wires
+ * Establishing a long-lived consumer <em>is</em> subscribing. {@code CatalogEventListener} wires
  * bus subscriptions, {@code MongoSchemaValidationConfig} applies validators at boot, and
  * {@code RevocationCacheWarmer} warms a cache on startup — none of those is a request path, and
  * rewriting them to avoid the word would make them worse. They sit inside the frozen counts

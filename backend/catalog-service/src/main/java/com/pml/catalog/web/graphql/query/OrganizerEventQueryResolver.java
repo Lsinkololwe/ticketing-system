@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.*;
@@ -9,7 +11,6 @@ import com.pml.catalog.service.EventService;
 import com.pml.shared.constants.EventStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
@@ -41,7 +42,7 @@ public class OrganizerEventQueryResolver {
      * @return Paginated events owned by the current organizer
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_VIEW)
     public Mono<EventOffsetPage> myEvents(
             @InputArgument OrganizerEventFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
@@ -69,7 +70,7 @@ public class OrganizerEventQueryResolver {
      * @return Paginated draft events owned by the current organizer
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_VIEW)
     public Mono<EventOffsetPage> myDraftEvents(
             @InputArgument OffsetPaginationInput pagination
     ) {
@@ -89,7 +90,7 @@ public class OrganizerEventQueryResolver {
      * @return Total number of events owned by the current organizer
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_VIEW)
     public Mono<Integer> myEventCount() {
         return getCurrentUserId()
                 .flatMap(organizerId -> {
@@ -105,7 +106,7 @@ public class OrganizerEventQueryResolver {
      * @return Number of events with the specified status
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_VIEW)
     public Mono<Integer> myEventCountByStatus(@InputArgument EventStatus status) {
         return getCurrentUserId()
                 .flatMap(organizerId -> {

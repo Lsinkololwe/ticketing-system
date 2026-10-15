@@ -1,5 +1,6 @@
 package com.pml.identity.organization;
 
+import com.pml.identity.authorization.DecisionContextLoader;
 import com.pml.identity.domain.enums.AccessGrantStatus;
 import com.pml.identity.domain.enums.MemberStatus;
 import com.pml.identity.domain.model.EventAccessGrant;
@@ -56,8 +57,9 @@ class CrossServicePermissionCheckTest {
         grantRepository = mock(EventAccessGrantRepository.class);
         organizations = mock(OrganizationService.class);
         PermissionResolutionServiceImpl resolution = new PermissionResolutionServiceImpl(
-                mock(UserRepository.class), memberRepository, organizationRepository, grantRepository,
-                TestClock.frozenAt(Instant.parse("2026-09-18T10:00:00Z")));
+                new DecisionContextLoader(mock(UserRepository.class), memberRepository, organizationRepository,
+                        grantRepository, TestClock.frozenAt(Instant.parse("2026-09-18T10:00:00Z"))),
+                memberRepository, grantRepository, TestClock.frozenAt(Instant.parse("2026-09-18T10:00:00Z")));
         authorization = new AuthorizationServiceImpl(resolution, mock(OrganizationMemberService.class), organizations);
 
         organization = new Organization();

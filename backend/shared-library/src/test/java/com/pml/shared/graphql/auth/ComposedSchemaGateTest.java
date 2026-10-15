@@ -133,7 +133,7 @@ class ComposedSchemaGateTest {
     private static int scan(String code, Set<String> gated) {
         Matcher type = TYPE_DECLARATION.matcher(code);
         int firstType = type.find() ? type.start() : 0;
-        boolean classGated = code.substring(0, firstType).contains("@PreAuthorize");
+        boolean classGated = decidesAccess(code.substring(0, firstType));
 
         int resolvers = 0;
         Matcher entry = DGS_ENTRY.matcher(code);
@@ -171,7 +171,7 @@ class ComposedSchemaGateTest {
             // Dgs annotation as well as below it.
             int memberStart = Math.max(code.lastIndexOf(';', entry.start()),
                     Math.max(code.lastIndexOf('}', entry.start()), code.lastIndexOf('{', entry.start()))) + 1;
-            boolean methodGated = code.substring(memberStart, cursor).contains("@PreAuthorize");
+            boolean methodGated = decidesAccess(code.substring(memberStart, cursor));
 
             resolvers++;
             if (classGated || methodGated) {
@@ -241,8 +241,17 @@ class ComposedSchemaGateTest {
         }
     }
 
+    /**
+     * A resolver decides who may call it with {@code @PreAuthorize}, or with {@code @RequiresPermission},
+     * which guards the method by a permission of the catalogue instead of by a role.
+     */
+    private static boolean decidesAccess(String declaration) {
+        return declaration.contains("@PreAuthorize") || declaration.contains("@RequiresPermission")
+                || declaration.contains("@RequiresTenantPermission");
+    }
+
     @Test
-    @DisplayName("over the union of all three services, no root field lacks @auth or @PreAuthorize")
+    @DisplayName("over the union of all three services, no root field lacks @auth, @PreAuthorize, @RequiresPermission or @RequiresTenantPermission")
     void noRootFieldIsUndecidedAcrossTheComposedSchema() {
         List<String> undecided = new ArrayList<>();
         StringBuilder counts = new StringBuilder();

@@ -1,6 +1,6 @@
 id: ET-IDN-001
 title: Contact-OTP passwordless identity
-status: approved
+status: implemented
 area: IDN
 service: identity-service
 subgraph: null            # no graph surface — the programmatic surface is internal REST

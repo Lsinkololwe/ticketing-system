@@ -123,20 +123,44 @@ public class AccessRevocationService implements AccessCutter {
      * @return the number of sessions ended
      */
     public Mono<Long> cutOtherSessions(String keycloakUserId, String keepSid, RevocationTrigger trigger) {
+        return cutOtherSessions(keycloakUserId, keepSid, null, trigger);
+    }
+
+    /**
+     * As {@link #cutOtherSessions(String, String, RevocationTrigger)}, and only the sessions that
+     * started at or before {@code changedAt} are cut.
+     *
+     * <p>A credential set during a sign-in (the first password and authenticator of a new staff
+     * account, or a forced reset) is reported before any session exists, so the event names no
+     * session to keep, and its delivery is asynchronous: by the time it is processed, the session
+     * that sign-in created is already live. Ending "every session but the named one" then ended the
+     * very sign-in the person had just completed. A session that started after the change was
+     * authenticated with the new credential, so it is not one the change has to cut.</p>
+     *
+     * @param changedAt when the credential changed; {@code null} cuts every session but {@code keepSid}
+     */
+    public Mono<Long> cutOtherSessions(String keycloakUserId, String keepSid, java.time.Instant changedAt,
+                                       RevocationTrigger trigger) {
         MongoRevocationStore revocations = store.getIfAvailable();
         if (revocations == null) {
             return Mono.error(new IllegalStateException("token revocation is switched off"));
         }
         return template.findOne(Query.query(Criteria.where("keycloakUserId").is(keycloakUserId)), User.class)
-                .flatMap(account -> endSessionsExcept(revocations, account, keepSid, trigger, account.getId()))
+                .flatMap(account -> endSessionsExcept(revocations, account, keepSid, changedAt, trigger, account.getId()))
                 .defaultIfEmpty(0L);
     }
 
     private Mono<Long> endSessionsExcept(MongoRevocationStore revocations, User account, String keepSid,
                                          RevocationTrigger trigger, String actorId) {
+        return endSessionsExcept(revocations, account, keepSid, null, trigger, actorId);
+    }
+
+    private Mono<Long> endSessionsExcept(MongoRevocationStore revocations, User account, String keepSid,
+                                         java.time.Instant changedAt, RevocationTrigger trigger, String actorId) {
         String realm = accounts.realmOf(account);
         return keycloak.sessions(realm, account.getKeycloakUserId())
                 .filter(view -> keepSid == null || !view.id().equals(keepSid))
+                .filter(view -> changedAt == null || view.startedAt() == null || !view.startedAt().isAfter(changedAt))
                 .concatMap(view -> revocations.revoke(RevocationType.SESSION, view.id(), trigger,
                                 trigger.name(), actorId, null)
                         .then(keycloak.endSession(realm, view.id()).onErrorResume(error -> {

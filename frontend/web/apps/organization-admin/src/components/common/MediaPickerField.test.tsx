@@ -3,12 +3,14 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 
 const upload = vi.fn();
+const uploadLarge = vi.fn();
 vi.mock('@/lib/api/media', () => ({
   useMyMedia: () => ({ items: [{ id: 'm1', url: 'https://cdn.test/a.jpg', fileName: 'a.jpg', title: 'Poster', altText: 'Poster' }], loading: false, error: undefined }),
-  useMediaActions: () => ({ upload }),
+  useMediaActions: () => ({ upload, uploadLarge }),
   fileToBase64: async () => 'QUJD',
   MEDIA_TYPES: ['image/jpeg', 'image/png', 'image/webp'],
   MEDIA_MAX_BYTES: 5 * 1048576,
+  MEDIA_LARGE_MAX_BYTES: 20 * 1048576,
 }));
 
 import { MediaPickerField } from './MediaPickerField';
@@ -47,5 +49,24 @@ describe('MediaPickerField', () => {
     fireEvent.change(input, { target: { files: [new File(['x'], 'logo.png', { type: 'image/png' })] } });
     await waitFor(() => expect(latest).toBe('https://cdn.test/new.png'));
     expect(upload).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'logo.png', contentType: 'image/png', contentBase64: 'QUJD' }));
+  });
+  it('sends an image over 5 MB through the two-step upload and refuses one over 20 MB', async () => {
+    uploadLarge.mockResolvedValue({ url: 'https://cdn.test/large.png' });
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Choose logo' }));
+    const input = within(screen.getByRole('dialog')).getByLabelText('Upload an image') as HTMLInputElement;
+
+    const big = new File([new Uint8Array(6 * 1048576)], 'big.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [big] } });
+    await waitFor(() => expect(latest).toBe('https://cdn.test/large.png'));
+    expect(uploadLarge).toHaveBeenCalledWith(big);
+
+    // The dialog closed on success; open it again for the second file.
+    fireEvent.click(screen.getByRole('button', { name: 'Change logo' }));
+    const again = within(screen.getByRole('dialog')).getByLabelText('Upload an image') as HTMLInputElement;
+    const huge = new File([new Uint8Array(21 * 1048576)], 'huge.png', { type: 'image/png' });
+    fireEvent.change(again, { target: { files: [huge] } });
+    expect(await screen.findByText('That image is larger than 20 MB.')).toBeInTheDocument();
+    expect(uploadLarge).toHaveBeenCalledTimes(1);
   });
 });

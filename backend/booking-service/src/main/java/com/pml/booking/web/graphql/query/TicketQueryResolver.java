@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.pml.booking.service.TicketSearch;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import org.springframework.data.mongodb.core.query.Criteria;
 import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
@@ -56,7 +58,7 @@ public class TicketQueryResolver {
      * Schema: ticket(id: ID!): Ticket
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER', 'FINANCE') or @ticketSecurityService.isTicketOwner(#id, authentication)")
+    @PreAuthorize("@ticketSecurityService.permissionOrTicketOwner(authentication, 'ticket:view', #id)")
     public Mono<Ticket> ticket(@InputArgument String id) {
         log.debug("GraphQL query: ticket(id={})", id);
         Objects.requireNonNull(id, "Ticket ID is required");
@@ -68,7 +70,7 @@ public class TicketQueryResolver {
      * Schema: ticketByNumber(ticketNumber: String!): Ticket
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER', 'FINANCE') or @ticketSecurityService.isTicketOwnerByNumber(#ticketNumber, authentication)")
+    @PreAuthorize("@ticketSecurityService.permissionOrTicketOwnerByNumber(authentication, 'ticket:view', #ticketNumber)")
     public Mono<Ticket> ticketByNumber(@InputArgument String ticketNumber) {
         log.debug("GraphQL query: ticketByNumber({})", ticketNumber);
         Objects.requireNonNull(ticketNumber, "Ticket number is required");
@@ -84,7 +86,7 @@ public class TicketQueryResolver {
      * Schema: ticketsByEvent(eventId: String!, pagination: OffsetPaginationInput): TicketOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'ticket:view', #eventId)")
     public Mono<TicketOffsetPage> ticketsByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
@@ -99,7 +101,7 @@ public class TicketQueryResolver {
      * Schema: ticketsByBuyerOffsetPagination(buyerId: String!, status: TicketStatus, pagination: OffsetPaginationInput): TicketOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or #buyerId == authentication.principal.subject")
+    @PreAuthorize("@permissionGuards.ownerOrPermission(authentication, #buyerId, 'buyer:view')")
     public Mono<TicketOffsetPage> ticketsByBuyerOffsetPagination(
             @InputArgument String buyerId,
             @InputArgument TicketStatus status,
@@ -123,7 +125,7 @@ public class TicketQueryResolver {
      * that the requesting user is either the organizer or a team member with access.</p>
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN,FINANCE', #organizerId)")
+    @PreAuthorize("@organizationSecurityService.permissionOrTeamMember(authentication, 'ticket:view', #organizerId)")
     public Mono<TicketOffsetPage> ticketsByOrganizer(
             @InputArgument String organizerId,
             @InputArgument TicketFilterInput filter,
@@ -142,7 +144,7 @@ public class TicketQueryResolver {
      * Schema: searchTickets(filter: TicketFilterInput!, pagination: OffsetPaginationInput): TicketOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TICKET_VIEW)
     public Mono<TicketOffsetPage> searchTickets(
             @InputArgument TicketFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
@@ -163,7 +165,7 @@ public class TicketQueryResolver {
      * Schema: ticketsByBuyerCursorPagination(buyerId: String!, status: TicketStatus, pagination: CursorPaginationInput): TicketConnection!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or #buyerId == authentication.principal.subject")
+    @PreAuthorize("@permissionGuards.ownerOrPermission(authentication, #buyerId, 'buyer:view')")
     public Mono<TicketConnection> ticketsByBuyerCursorPagination(
             @InputArgument String buyerId,
             @InputArgument TicketStatus status,
@@ -188,7 +190,7 @@ public class TicketQueryResolver {
      * Schema: ticketCountByEvent(eventId: String!): Int!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'ticket:view', #eventId)")
     public Mono<Integer> ticketCountByEvent(@InputArgument String eventId) {
         log.debug("GraphQL query: ticketCountByEvent({})", eventId);
         Objects.requireNonNull(eventId, "Event ID is required");
@@ -200,7 +202,7 @@ public class TicketQueryResolver {
      * Schema: ticketCountByBuyer(buyerId: String!): Int!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or #buyerId == authentication.principal.subject")
+    @PreAuthorize("@permissionGuards.ownerOrPermission(authentication, #buyerId, 'buyer:view')")
     public Mono<Integer> ticketCountByBuyer(@InputArgument String buyerId) {
         log.debug("GraphQL query: ticketCountByBuyer({})", buyerId);
         Objects.requireNonNull(buyerId, "Buyer ID is required");
@@ -216,7 +218,7 @@ public class TicketQueryResolver {
      * Schema: ticketStats(eventId: ID): TicketStats!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or (@eventSecurityService.isEventOrganizer(#eventId, authentication) and #eventId != null)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'ticket:view', #eventId)")
     public Mono<TicketStats> ticketStats(@InputArgument String eventId) {
         log.debug("GraphQL query: ticketStats(eventId={})", eventId);
         return eventId != null

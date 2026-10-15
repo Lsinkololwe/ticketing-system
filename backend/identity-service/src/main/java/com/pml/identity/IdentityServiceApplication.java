@@ -26,7 +26,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * - A transactional outbox in MongoDB for domain event publication
  *   (com.pml.shared.event.Outbox — there is no Spring Modulith here)
  * - MongoDB Event Publication Registry for transactional outbox
- * - Azure Service Bus for cross-service messaging
+ * - RabbitMQ for cross-service messaging
  */
 @SpringBootApplication(scanBasePackages = {"com.pml.identity", "com.pml.shared"})
 @EnableConfigurationProperties(MongoSchemaValidationProperties.class)

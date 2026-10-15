@@ -18,9 +18,34 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 - The role below is resolved from the field's `@auth(requires: …)` directive when it has one, and from the resolver's `@PreAuthorize` when it does not. Catalog uses the directive, booking and identity use `@PreAuthorize`; neither source alone describes the platform.
 - **`AUTHENTICATED (endpoint floor only)` means neither check was found on the field.** It is not public: all three subgraphs carry `.pathMatchers("/graphql/**").authenticated()`, so a token is always required whatever a `# PUBLIC` comment in the schema says. It does mean *any* signed-in caller reaches it — a self-service `CUSTOMER` token included — which is where `event(id)` sat while it was returning other organizations' unpublished events (F-007).
 
-## Operations by required role (518 total)
+## Operations by required role (522 total)
 
-### `@isEscrowOwner or ADMIN or FINANCE` — 3 operation(s)
+### `@holds` — 3 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| identity | Query | `permission` | `code: String!` |
+| identity | Query | `permissions` | — |
+| identity | Query | `rolePermissions` | `role: String!` |
+
+### `@isPublic` — 2 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| catalog | Query | `referenceData` | `type: ReferenceType!, activeOnly: Boolean = true` |
+| catalog | Query | `referenceDataByParent` | `type: ReferenceType!, parentCode: String!` |
+
+### `@ownerOrPermission` — 5 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Query | `myActiveReservations` | `userId: ID!` |
+| booking | Query | `refundRequestsByBuyer` | `buyerId: String!, pagination: OffsetPaginationInput` |
+| booking | Query | `ticketCountByBuyer` | `buyerId: String!` |
+| booking | Query | `ticketsByBuyerCursorPagination` | `buyerId: String!, status: TicketStatus, pagination: CursorPaginationInput` |
+| booking | Query | `ticketsByBuyerOffsetPagination` | `buyerId: String!, status: TicketStatus, pagination: OffsetPaginationInput` |
+
+### `@permissionOrEscrowOwner` — 3 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -28,18 +53,13 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Query | `escrowAccountBalance` | `accountId: String!` |
 | booking | Query | `escrowAccountByNumber` | `accountNumber: String!` |
 
-### `@isEventOrganizer or ADMIN` — 1 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Query | `eventPromoCodes` | `eventId: ID!` |
-
-### `@isEventOrganizer or ADMIN or FINANCE` — 10 operation(s)
+### `@permissionOrEventOrganizer` — 11 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Query | `escrowAccountByEvent` | `eventId: String!` |
 | booking | Query | `eventLiveDashboard` | `eventId: ID!` |
+| booking | Query | `eventPromoCodes` | `eventId: ID!` |
 | booking | Query | `eventRefundSummary` | `eventId: String!` |
 | booking | Query | `exportSalesReport` | `eventId: ID!, format: ExportFormat!` |
 | booking | Query | `payoutRequestsByEvent` | `eventId: String!, pagination: OffsetPaginationInput` |
@@ -49,46 +69,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Query | `ticketStats` | `eventId: ID` |
 | booking | Query | `ticketsByEvent` | `eventId: String!, pagination: OffsetPaginationInput` |
 
-### `@isPublic` — 2 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| catalog | Query | `referenceData` | `type: ReferenceType!, activeOnly: Boolean = true` |
-| catalog | Query | `referenceDataByParent` | `type: ReferenceType!, parentCode: String!` |
-
-### `@isRefundRequestOwner or ADMIN or FINANCE` — 1 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Query | `refundRequest` | `id: ID!` |
-
-### `@isRefundRequestOwnerByRequestId or ADMIN or FINANCE` — 1 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Query | `refundRequestByRequestId` | `requestId: String!` |
-
-### `@isTicketOwner or ADMIN or FINANCE` — 3 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Query | `calculateRefundAmount` | `ticketId: String!` |
-| booking | Query | `isTicketEligibleForRefund` | `ticketId: String!` |
-| booking | Query | `refundRequestsByTicket` | `ticketId: String!` |
-
-### `@isTicketOwner or ADMIN or FINANCE or ORGANIZER` — 1 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Query | `ticket` | `id: ID!` |
-
-### `@isTicketOwnerByNumber or ADMIN or FINANCE or ORGANIZER` — 1 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Query | `ticketByNumber` | `ticketNumber: String!` |
-
-### `@rolesOrFinancialView` — 3 operation(s)
+### `@permissionOrFinancialView` — 3 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
@@ -96,22 +77,237 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Query | `payoutRequestStats` | `organizerId: ID` |
 | booking | Query | `payoutRequestsByOrganizer` | `organizerId: String!, pagination: OffsetPaginationInput` |
 
-### `@rolesOrTeamMember` — 2 operation(s)
+### `@permissionOrRefundRequestOwner` — 1 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Query | `refundRequest` | `id: ID!` |
+
+### `@permissionOrRefundRequestOwnerByRequestId` — 1 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Query | `refundRequestByRequestId` | `requestId: String!` |
+
+### `@permissionOrTeamMember` — 4 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Query | `organizerPromoCodes` | `organizerId: ID!` |
 | booking | Query | `ticketsByOrganizer` | `organizerId: String!, filter: TicketFilterInput, pagination: OffsetPaginationInput` |
+| catalog | Query | `draftEvents` | `organizerId: String!, pagination: OffsetPaginationInput` |
+| catalog | Query | `eventCountByOrganizer` | `organizerId: String!` |
 
-### `ADMIN` — 143 operation(s)
+### `@permissionOrTicketOwner` — 4 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Query | `calculateRefundAmount` | `ticketId: String!` |
+| booking | Query | `isTicketEligibleForRefund` | `ticketId: String!` |
+| booking | Query | `refundRequestsByTicket` | `ticketId: String!` |
+| booking | Query | `ticket` | `id: ID!` |
+
+### `@permissionOrTicketOwnerByNumber` — 1 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Query | `ticketByNumber` | `ticketNumber: String!` |
+
+### `ADMIN or FINANCE or ORGANIZER or SUPER_ADMIN` — 13 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Mutation | `cancelTicket` | `ticketNumber: String!, reason: String!` |
+| booking | Query | `escrowTransactions` | `escrowAccountId: String!, pagination: OffsetPaginationInput` |
+| booking | Query | `payoutRequest` | `id: ID!` |
+| booking | Query | `payoutRequestByRequestId` | `requestId: String!` |
+| booking | Query | `refundRequestsByOrganizer` | `organizationId: ID, filter: RefundRequestFilterInput, pagination: OffsetPaginationInput` |
+| catalog | Query | `allowedStatusTransitions` | `eventId: String!` |
+| catalog | Query | `eventLifecycle` | `eventId: String!` |
+| catalog | Query | `eventTicketTiers` | `eventId: ID!, includeHidden: Boolean = false` |
+| catalog | Query | `myDraftEvents` | `pagination: OffsetPaginationInput` |
+| catalog | Query | `myEventCount` | — |
+| catalog | Query | `myEventCountByStatus` | `status: EventStatus!` |
+| catalog | Query | `myEvents` | `filter: OrganizerEventFilterInput, pagination: OffsetPaginationInput` |
+| catalog | Query | `myEventsConnection` | `filter: OrganizerEventFilterInput, pagination: CursorPaginationInput` |
+
+### `ADMIN or FINANCE or SUPER_ADMIN` — 105 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Mutation | `approvePayoutRequest` | `payoutRequestId: ID!, notes: String, idempotencyKey: String!` |
+| booking | Mutation | `approveRefundRequest` | `refundRequestId: ID!, reviewComments: String, idempotencyKey: String!` |
+| booking | Mutation | `bulkApproveRefunds` | `refundRequestIds: [ID!]!` |
+| booking | Mutation | `bulkMarkPayoutsForReview` | `payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String` |
+| booking | Mutation | `bulkRetryFailedPayouts` | `payoutRequestIds: [ID!]!, idempotencyKey: String!` |
+| booking | Mutation | `completePayoutRequest` | `payoutRequestId: ID!, bankReference: String!` |
+| booking | Mutation | `confirmRecoveryAction` | `proposalId: ID!, reason: String!` |
+| booking | Mutation | `createAdminRefundRequest` | `ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal, idempotencyKey: String!` |
+| booking | Mutation | `escalatePayoutRequest` | `payoutRequestId: ID!, reason: String!` |
+| booking | Mutation | `holdPayoutRequest` | `payoutRequestId: ID!, reason: String!` |
+| booking | Mutation | `markPayoutForReview` | `payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String` |
+| booking | Mutation | `processPayoutRequest` | `payoutRequestId: ID!` |
+| booking | Mutation | `proposeRecoveryAction` | `input: ProposeRecoveryActionInput!` |
+| booking | Mutation | `rejectPayoutRequest` | `payoutRequestId: ID!, rejectionReason: String!` |
+| booking | Mutation | `rejectRefundRequest` | `refundRequestId: ID!, rejectionReason: String!` |
+| booking | Mutation | `releasePayoutHold` | `payoutRequestId: ID!, note: String` |
+| booking | Mutation | `resolvePayoutIssue` | `payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!` |
+| booking | Mutation | `resumePaymentAttempt` | `depositId: String!` |
+| booking | Mutation | `retryPaymentAttempts` | `depositIds: [String!]!` |
+| booking | Mutation | `retryPayoutRequest` | `payoutRequestId: ID!, idempotencyKey: String!` |
+| booking | Mutation | `transferBetweenPlatformAccounts` | `input: PlatformTransferInput!` |
+| booking | Mutation | `updateChargebackRecovery` | `id: ID!, input: UpdateChargebackRecoveryInput!` |
+| booking | Mutation | `verifyBankAccount` | `id: ID!` |
+| booking | Mutation | `withdrawRecoveryProposal` | `proposalId: ID!` |
+| booking | Query | `bookingPendingCounts` | — |
+| booking | Query | `chargeback` | `id: ID!` |
+| booking | Query | `chargebackByChargebackId` | `chargebackId: String!` |
+| booking | Query | `chargebackStats` | `organizerId: String, eventId: String` |
+| booking | Query | `chargebacks` | `filter: ChargebackFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `chargebacksByEvent` | `eventId: String!, pagination: OffsetPaginationInput` |
+| booking | Query | `chargebacksByOrganizer` | `organizerId: String!, pagination: OffsetPaginationInput` |
+| booking | Query | `chargebacksPendingRecovery` | — |
+| booking | Query | `chartOfAccounts` | — |
+| booking | Query | `chartOfAccountsByCode` | `accountCode: String!` |
+| booking | Query | `chartOfAccountsByType` | `accountType: AccountType!` |
+| booking | Query | `chartOfAccountsEntry` | `id: ID!` |
+| booking | Query | `commissionRecords` | `filter: CommissionFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `confirmedUnfulfilledPaymentAttempts` | — |
+| booking | Query | `dualControlQueue` | — |
+| booking | Query | `escrowAccount` | `id: ID!` |
+| booking | Query | `escrowAccounts` | `filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `escrowBalance` | `escrowAccountId: String!` |
+| booking | Query | `escrowBalanceAsOf` | `escrowAccountId: String!, asOf: DateTime!` |
+| booking | Query | `escrowJournalInconsistencies` | — |
+| booking | Query | `escrowJournalVerification` | `eventId: ID!` |
+| booking | Query | `escrowJournalVerificationAll` | — |
+| booking | Query | `escrowTransaction` | `id: ID!` |
+| booking | Query | `escrowTransactionsByTicket` | `ticketId: String!` |
+| booking | Query | `escrowTransactionsUnlinked` | — |
+| booking | Query | `expiredReservations` | `eventId: ID, since: DateTime!, pagination: OffsetPaginationInput` |
+| booking | Query | `exportFinancialReport` | `filter: FinancialReportFilterInput!, format: ExportFormat!` |
+| booking | Query | `failedPayoutRequests` | `pagination: OffsetPaginationInput` |
+| booking | Query | `financialReport` | `filter: FinancialReportFilterInput!` |
+| booking | Query | `gatewaySettlements` | `filter: GatewaySettlementFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `hasSuccessfulPayment` | `reservationId: String!` |
+| booking | Query | `journalEntries` | `filter: JournalEntryFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `journalEntriesByAccountCode` | `accountCode: String!, pagination: OffsetPaginationInput` |
+| booking | Query | `journalEntriesByCorrelationId` | `correlationId: String!` |
+| booking | Query | `journalEntry` | `id: ID!` |
+| booking | Query | `journalEntryByNumber` | `entryNumber: String!` |
+| booking | Query | `latestPaymentAttemptByReservation` | `reservationId: String!` |
+| booking | Query | `myRecoveryProposals` | — |
+| booking | Query | `paymentAttempt` | `id: ID!` |
+| booking | Query | `paymentAttemptByAttemptNumber` | `attemptNumber: String!` |
+| booking | Query | `paymentAttemptByDepositId` | `depositId: String!` |
+| booking | Query | `paymentAttemptCountByStatus` | `status: PaymentAttemptStatus!` |
+| booking | Query | `paymentAttemptSearch` | `filter: PaymentAttemptFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `paymentAttempts` | `intentId: ID!` |
+| booking | Query | `paymentAttemptsByBuyer` | `buyerId: String!` |
+| booking | Query | `paymentAttemptsByEvent` | `eventId: String!` |
+| booking | Query | `paymentAttemptsByReservation` | `reservationId: String!` |
+| booking | Query | `paymentAttemptsByStatus` | `status: PaymentAttemptStatus!` |
+| booking | Query | `paymentRiskSummary` | `windowHours: Int = 24` |
+| booking | Query | `payoutRecoverySummary` | — |
+| booking | Query | `payoutRequests` | `filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput` |
+| booking | Query | `payoutRequestsByIssueType` | `issueType: PayoutIssueType!, pagination: OffsetPaginationInput` |
+| booking | Query | `payoutRequestsForReview` | `reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput` |
+| booking | Query | `pendingChargebacks` | — |
+| booking | Query | `pendingJournalEntries` | `pagination: OffsetPaginationInput` |
+| booking | Query | `pendingPaymentAttempts` | — |
+| booking | Query | `pendingPayoutRequests` | `pagination: OffsetPaginationInput` |
+| booking | Query | `pendingRecoveryProposals` | — |
+| booking | Query | `pendingRefundRequests` | `pagination: OffsetPaginationInput` |
+| booking | Query | `platformSummary` | — |
+| booking | Query | `recentlyResolvedPayoutRequests` | `pagination: OffsetPaginationInput` |
+| booking | Query | `reconciliationRun` | `id: ID!` |
+| booking | Query | `reconciliationRuns` | `filter: ReconciliationFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `reconciliationRunsByType` | `type: ReconciliationType!, pagination: OffsetPaginationInput` |
+| booking | Query | `reconciliationRunsRequiringReview` | — |
+| booking | Query | `reconciliationSummary` | `type: ReconciliationType, startDate: DateTime, endDate: DateTime` |
+| booking | Query | `refundRequests` | `filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput` |
+| booking | Query | `retryablePayoutRequests` | `pagination: OffsetPaginationInput` |
+| booking | Query | `searchTickets` | `filter: TicketFilterInput!, pagination: OffsetPaginationInput` |
+| booking | Query | `stuckPayoutRequests` | `pagination: OffsetPaginationInput` |
+| booking | Query | `stuckTransactions` | `minutes: Int = 30, pagination: OffsetPaginationInput` |
+| booking | Query | `successfulPaymentAttemptByReservation` | `reservationId: String!` |
+| booking | Query | `transactionStats` | `eventId: ID, organizerId: ID` |
+| booking | Query | `trialBalance` | `asOf: DateTime` |
+| identity | Mutation | `reinstateBankAccount` | `organizationId: ID!` |
+| identity | Mutation | `rejectBankAccount` | `organizationId: ID!, reason: String!` |
+| identity | Mutation | `rejectPayoutAccount` | `organizationId: ID!, reason: String!` |
+| identity | Mutation | `suspendBankAccount` | `organizationId: ID!, reason: String!` |
+| identity | Mutation | `verifyPayoutAccount` | `organizationId: ID!, verified: Boolean!` |
+| identity | Query | `auditLogs` | `filter: AuditLogFilterInput, pagination: OffsetPaginationInput` |
+| identity | Query | `bankAccounts` | `filter: PayoutAccountFilterInput, pagination: OffsetPaginationInput` |
+
+### `ADMIN or INTERNAL_SERVICE or SCOPE_internal-write` — 1 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Mutation | `createEscrowAccount` | `input: CreateEscrowAccountInput!` |
+
+### `ADMIN or ORGANIZER` — 3 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| identity | Mutation | `setBankAccount` | `organizationId: ID!, input: SetBankAccountInput!` |
+| identity | Mutation | `setMobileMoneyAccount` | `organizationId: ID!, input: SetMobileMoneyAccountInput!` |
+| identity | Mutation | `updatePayoutConfig` | `organizationId: ID!, input: UpdatePayoutConfigInput!` |
+
+### `ADMIN or ORGANIZER or SUPER_ADMIN` — 41 operation(s)
+
+| Subgraph | Kind | Operation | Arguments |
+|---|---|---|---|
+| booking | Mutation | `activatePromoCode` | `id: ID!` |
+| booking | Mutation | `cancelPayoutRequest` | `payoutRequestId: ID!, reason: String!` |
+| booking | Mutation | `createPromoCode` | `input: CreatePromoCodeInput!` |
+| booking | Mutation | `deactivatePromoCode` | `id: ID!` |
+| booking | Mutation | `deletePromoCode` | `id: ID!` |
+| booking | Mutation | `messageTicketHolders` | `eventId: ID!, input: MessageTicketHoldersInput!` |
+| booking | Mutation | `updatePromoCode` | `id: ID!, input: UpdatePromoCodeInput!` |
+| booking | Query | `bookingsByOrganizer` | `organizationId: ID, filter: BookingFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `promoCode` | `id: ID!` |
+| booking | Query | `promoCodeByCode` | `code: String!` |
+| booking | Query | `purchasesByDayAndHour` | `from: DateTime, to: DateTime, eventId: ID, organizationId: ID` |
+| booking | Query | `salesOverTime` | `eventId: ID!, from: DateTime, to: DateTime, bucket: SalesBucket = DAY` |
+| booking | Query | `ticketHolderAudience` | `eventId: ID!, segment: HolderSegment = ALL, ticketTierId: String` |
+| booking | Query | `ticketHolderMessages` | `eventId: ID!, pagination: OffsetPaginationInput` |
+| catalog | Mutation | `activateTicketTier` | `tierId: ID!` |
+| catalog | Mutation | `cancelEvent` | `id: ID!, input: EventCancellationInput!` |
+| catalog | Mutation | `cancelScheduledPublish` | `eventId: ID!` |
+| catalog | Mutation | `completeMediaUpload` | `input: CompleteMediaUploadInput!` |
+| catalog | Mutation | `createEvent` | `input: CreateEventInput!` |
+| catalog | Mutation | `createTicketTier` | `eventId: ID!, input: CreateTicketTierInput!` |
+| catalog | Mutation | `deactivateTicketTier` | `tierId: ID!` |
+| catalog | Mutation | `deleteEvent` | `id: ID!` |
+| catalog | Mutation | `deleteMedia` | `id: ID!` |
+| catalog | Mutation | `deleteTicketTier` | `tierId: ID!` |
+| catalog | Mutation | `duplicateEvent` | `eventId: ID!, newTitle: String!` |
+| catalog | Mutation | `publishEvent` | `id: ID!` |
+| catalog | Mutation | `reorderTicketTiers` | `eventId: ID!, tierIds: [ID!]!` |
+| catalog | Mutation | `requestMediaUpload` | `input: RequestMediaUploadInput!` |
+| catalog | Mutation | `rescheduleEvent` | `input: RescheduleEventInput!` |
+| catalog | Mutation | `submitEventForApproval` | `eventId: ID!` |
+| catalog | Mutation | `unpublishEvent` | `id: ID!` |
+| catalog | Mutation | `updateEvent` | `id: ID!, input: UpdateEventInput!` |
+| catalog | Mutation | `updateEventAccessibility` | `eventId: ID!, input: EventAccessibilityInput!` |
+| catalog | Mutation | `updateEventCapacity` | `eventId: ID!, newCapacity: Int!` |
+| catalog | Mutation | `updateMedia` | `id: ID!, input: UpdateMediaInput!` |
+| catalog | Mutation | `updateTicketTier` | `tierId: ID!, input: UpdateTicketTierInput!` |
+| catalog | Mutation | `uploadMedia` | `input: UploadMediaInput!` |
+| catalog | Query | `eventStatistics` | `eventId: ID!` |
+| catalog | Query | `myMedia` | `filter: MediaFilterInput, pagination: CursorPaginationInput` |
+| catalog | Query | `stockImages` | `filter: StockImageFilterInput, pagination: CursorPaginationInput` |
+| catalog | Query | `ticketTierStatistics` | `eventId: ID!, tierId: ID!` |
+
+### `ADMIN or SUPER_ADMIN` — 140 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Mutation | `acceptChargeback` | `id: ID!, reason: String` |
 | booking | Mutation | `addPaymentAttemptNote` | `depositId: String!, note: String!` |
 | booking | Mutation | `adminUpdateTicket` | `ticketId: ID!, input: AdminTicketUpdateInput!` |
-| booking | Mutation | `approveRefundRequest` | `refundRequestId: ID!, reviewComments: String, idempotencyKey: String!` |
-| booking | Mutation | `bulkApproveRefunds` | `refundRequestIds: [ID!]!` |
 | booking | Mutation | `bulkCancelTickets` | `ticketIds: [ID!]!, reason: String!` |
 | booking | Mutation | `closeEscrowAccount` | `accountId: ID!, reason: String!` |
 | booking | Mutation | `completeReconciliation` | `runId: ID!, notes: String` |
@@ -124,12 +320,10 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Mutation | `lockEscrowAccount` | `accountId: ID!, lockUntil: DateTime!, reason: String!` |
 | booking | Mutation | `markPayoutEligible` | `accountId: ID!` |
 | booking | Mutation | `postJournalEntry` | `id: ID!` |
-| booking | Mutation | `processRefundRequest` | `refundRequestId: ID!` |
 | booking | Mutation | `receiveChargeback` | `input: ReceiveChargebackInput!` |
 | booking | Mutation | `recordChargebackOutcome` | `id: ID!, won: Boolean!, notes: String` |
 | booking | Mutation | `recordGatewaySettlement` | `input: RecordGatewaySettlementInput!` |
 | booking | Mutation | `regenerateTicketQrCode` | `ticketId: ID!` |
-| booking | Mutation | `rejectRefundRequest` | `refundRequestId: ID!, rejectionReason: String!` |
 | booking | Mutation | `resolveReconciliationItem` | `runId: ID!, input: ResolveReconciliationItemInput!` |
 | booking | Mutation | `reverseJournalEntry` | `id: ID!, reason: String!` |
 | booking | Mutation | `seedChartOfAccounts` | — |
@@ -140,59 +334,15 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Mutation | `updateChartOfAccountsEntry` | `id: ID!, input: CreateChartOfAccountsInput!` |
 | booking | Mutation | `updateEscrowAccountStatus` | `accountId: ID!, status: EscrowAccountStatus!, reason: String` |
 | booking | Mutation | `verifyEscrowJournalConsistency` | `eventId: ID!` |
-| booking | Query | `chargeback` | `id: ID!` |
-| booking | Query | `chargebackByChargebackId` | `chargebackId: String!` |
-| booking | Query | `chargebackStats` | `organizerId: String, eventId: String` |
-| booking | Query | `chargebacks` | `filter: ChargebackFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `chargebacksByEvent` | `eventId: String!, pagination: OffsetPaginationInput` |
-| booking | Query | `chargebacksByOrganizer` | `organizerId: String!, pagination: OffsetPaginationInput` |
-| booking | Query | `chargebacksPendingRecovery` | — |
-| booking | Query | `chartOfAccounts` | — |
-| booking | Query | `chartOfAccountsByCode` | `accountCode: String!` |
-| booking | Query | `chartOfAccountsByType` | `accountType: AccountType!` |
-| booking | Query | `chartOfAccountsEntry` | `id: ID!` |
-| booking | Query | `confirmedUnfulfilledPaymentAttempts` | — |
-| booking | Query | `escrowBalance` | `escrowAccountId: String!` |
-| booking | Query | `escrowBalanceAsOf` | `escrowAccountId: String!, asOf: DateTime!` |
-| booking | Query | `escrowJournalInconsistencies` | — |
-| booking | Query | `escrowJournalVerification` | `eventId: ID!` |
-| booking | Query | `escrowJournalVerificationAll` | — |
-| booking | Query | `escrowTransaction` | `id: ID!` |
-| booking | Query | `escrowTransactionsByTicket` | `ticketId: String!` |
-| booking | Query | `escrowTransactionsUnlinked` | — |
-| booking | Query | `hasSuccessfulPayment` | `reservationId: String!` |
-| booking | Query | `journalEntries` | `filter: JournalEntryFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `journalEntriesByAccountCode` | `accountCode: String!, pagination: OffsetPaginationInput` |
-| booking | Query | `journalEntriesByCorrelationId` | `correlationId: String!` |
-| booking | Query | `journalEntry` | `id: ID!` |
-| booking | Query | `journalEntryByNumber` | `entryNumber: String!` |
-| booking | Query | `latestPaymentAttemptByReservation` | `reservationId: String!` |
-| booking | Query | `paymentAttempt` | `id: ID!` |
-| booking | Query | `paymentAttemptByAttemptNumber` | `attemptNumber: String!` |
-| booking | Query | `paymentAttemptByDepositId` | `depositId: String!` |
-| booking | Query | `paymentAttemptCountByStatus` | `status: PaymentAttemptStatus!` |
-| booking | Query | `paymentAttempts` | `intentId: ID!` |
-| booking | Query | `paymentAttemptsByBuyer` | `buyerId: String!` |
-| booking | Query | `paymentAttemptsByEvent` | `eventId: String!` |
-| booking | Query | `paymentAttemptsByReservation` | `reservationId: String!` |
-| booking | Query | `paymentAttemptsByStatus` | `status: PaymentAttemptStatus!` |
-| booking | Query | `pendingChargebacks` | — |
-| booking | Query | `pendingJournalEntries` | `pagination: OffsetPaginationInput` |
-| booking | Query | `pendingPaymentAttempts` | — |
 | booking | Query | `platformAccount` | `id: ID!` |
 | booking | Query | `platformAccountByType` | `accountType: PlatformAccountType!` |
 | booking | Query | `platformAccounts` | — |
-| booking | Query | `reconciliationRun` | `id: ID!` |
-| booking | Query | `reconciliationRuns` | `filter: ReconciliationFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `reconciliationRunsByType` | `type: ReconciliationType!, pagination: OffsetPaginationInput` |
-| booking | Query | `reconciliationRunsRequiringReview` | — |
-| booking | Query | `reconciliationSummary` | `type: ReconciliationType, startDate: DateTime, endDate: DateTime` |
-| booking | Query | `successfulPaymentAttemptByReservation` | `reservationId: String!` |
 | catalog | Mutation | `acknowledgeEscalation` | `escalationId: ID!, notes: String` |
 | catalog | Mutation | `activateEventCategory` | `id: ID!` |
 | catalog | Mutation | `addApprovalComment` | `eventId: ID!, comment: String!, isInternal: Boolean = true` |
 | catalog | Mutation | `approveEvent` | `eventId: ID!, comments: String` |
 | catalog | Mutation | `assignEventReviewer` | `input: AssignReviewerInput!` |
+| catalog | Mutation | `completeStockImageUpload` | `input: CompleteStockImageUploadInput!` |
 | catalog | Mutation | `createCity` | `input: CreateCityInput!` |
 | catalog | Mutation | `createEventCategory` | `input: CreateEventCategoryInput!` |
 | catalog | Mutation | `createProvince` | `input: CreateProvinceInput!` |
@@ -209,6 +359,7 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | catalog | Mutation | `rejectEvent` | `eventId: ID!, comments: String!` |
 | catalog | Mutation | `removeMedia` | `id: ID!, reason: String!` |
 | catalog | Mutation | `requestEventChanges` | `eventId: ID!, comments: String!` |
+| catalog | Mutation | `requestStockImageUpload` | `input: RequestMediaUploadInput!` |
 | catalog | Mutation | `resolveEscalation` | `input: ResolveEscalationInput!` |
 | catalog | Mutation | `restoreMedia` | `id: ID!` |
 | catalog | Mutation | `sendBulkEventPublishReminders` | `eventIds: [ID!]!, triggeredBy: String!` |
@@ -218,7 +369,6 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | catalog | Mutation | `unassignEventReviewer` | `eventId: ID!, reason: String` |
 | catalog | Mutation | `updateCity` | `id: ID!, input: UpdateCityInput!` |
 | catalog | Mutation | `updateEventCategory` | `id: ID!, input: UpdateEventCategoryInput!` |
-| catalog | Mutation | `updatePlatformConfiguration` | `input: UpdatePlatformConfigurationInput!` |
 | catalog | Mutation | `updateProvince` | `id: ID!, input: UpdateProvinceInput!` |
 | catalog | Mutation | `updateReferenceData` | `id: ID!, input: UpdateReferenceDataInput!` |
 | catalog | Mutation | `updateStockImage` | `id: ID!, input: UpdateStockImageInput!` |
@@ -250,100 +400,6 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | catalog | Query | `pendingApprovalTimelines` | `pagination: OffsetPaginationInput` |
 | catalog | Query | `platformConfiguration` | — |
 | catalog | Query | `referenceDataAll` | `type: ReferenceType!, pagination: OffsetPaginationInput` |
-
-### `ADMIN or FINANCE` — 30 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Mutation | `approvePayoutRequest` | `payoutRequestId: ID!, notes: String, idempotencyKey: String!` |
-| booking | Mutation | `bulkMarkPayoutsForReview` | `payoutRequestIds: [ID!]!, issueType: PayoutIssueType!, notes: String` |
-| booking | Mutation | `bulkRetryFailedPayouts` | `payoutRequestIds: [ID!]!, idempotencyKey: String!` |
-| booking | Mutation | `completePayoutRequest` | `payoutRequestId: ID!, bankReference: String!` |
-| booking | Mutation | `escalatePayoutRequest` | `payoutRequestId: ID!, reason: String!` |
-| booking | Mutation | `markPayoutForReview` | `payoutRequestId: ID!, issueType: PayoutIssueType!, notes: String` |
-| booking | Mutation | `processPayoutRequest` | `payoutRequestId: ID!` |
-| booking | Mutation | `rejectPayoutRequest` | `payoutRequestId: ID!, rejectionReason: String!` |
-| booking | Mutation | `resolvePayoutIssue` | `payoutRequestId: ID!, resolutionType: PayoutResolutionType!, notes: String!` |
-| booking | Mutation | `retryPayoutRequest` | `payoutRequestId: ID!, idempotencyKey: String!` |
-| booking | Mutation | `verifyBankAccount` | `id: ID!` |
-| booking | Query | `escrowAccount` | `id: ID!` |
-| booking | Query | `escrowAccounts` | `filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `expiredReservations` | `eventId: ID, since: DateTime!, pagination: OffsetPaginationInput` |
-| booking | Query | `exportFinancialReport` | `filter: FinancialReportFilterInput!, format: ExportFormat!` |
-| booking | Query | `failedPayoutRequests` | `pagination: OffsetPaginationInput` |
-| booking | Query | `financialReport` | `filter: FinancialReportFilterInput!` |
-| booking | Query | `payoutRecoverySummary` | — |
-| booking | Query | `payoutRequests` | `filter: PayoutRequestFilterInput!, pagination: OffsetPaginationInput` |
-| booking | Query | `payoutRequestsByIssueType` | `issueType: PayoutIssueType!, pagination: OffsetPaginationInput` |
-| booking | Query | `payoutRequestsForReview` | `reviewStatus: PayoutReviewStatus, pagination: OffsetPaginationInput` |
-| booking | Query | `pendingPayoutRequests` | `pagination: OffsetPaginationInput` |
-| booking | Query | `pendingRefundRequests` | `pagination: OffsetPaginationInput` |
-| booking | Query | `platformSummary` | — |
-| booking | Query | `recentlyResolvedPayoutRequests` | `pagination: OffsetPaginationInput` |
-| booking | Query | `refundRequests` | `filter: RefundRequestFilterInput!, pagination: OffsetPaginationInput` |
-| booking | Query | `retryablePayoutRequests` | `pagination: OffsetPaginationInput` |
-| booking | Query | `searchTickets` | `filter: TicketFilterInput!, pagination: OffsetPaginationInput` |
-| booking | Query | `stuckPayoutRequests` | `pagination: OffsetPaginationInput` |
-| booking | Query | `transactionStats` | `eventId: ID, organizerId: ID` |
-
-### `ADMIN or FINANCE or ORGANIZER` — 4 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Mutation | `cancelPayoutRequest` | `payoutRequestId: ID!, reason: String!` |
-| booking | Query | `escrowTransactions` | `escrowAccountId: String!, pagination: OffsetPaginationInput` |
-| booking | Query | `payoutRequest` | `id: ID!` |
-| booking | Query | `payoutRequestByRequestId` | `requestId: String!` |
-
-### `ADMIN or FINANCE or SUPER_ADMIN` — 9 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Query | `bookingPendingCounts` | — |
-| booking | Query | `trialBalance` | `asOf: DateTime` |
-| identity | Mutation | `reinstateBankAccount` | `organizationId: ID!` |
-| identity | Mutation | `rejectBankAccount` | `organizationId: ID!, reason: String!` |
-| identity | Mutation | `rejectPayoutAccount` | `organizationId: ID!, reason: String!` |
-| identity | Mutation | `suspendBankAccount` | `organizationId: ID!, reason: String!` |
-| identity | Mutation | `verifyPayoutAccount` | `organizationId: ID!, verified: Boolean!` |
-| identity | Query | `auditLogs` | `filter: AuditLogFilterInput, pagination: OffsetPaginationInput` |
-| identity | Query | `bankAccounts` | `filter: PayoutAccountFilterInput, pagination: OffsetPaginationInput` |
-
-### `ADMIN or FINANCE or self` — 5 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Query | `myActiveReservations` | `userId: ID!` |
-| booking | Query | `refundRequestsByBuyer` | `buyerId: String!, pagination: OffsetPaginationInput` |
-| booking | Query | `ticketCountByBuyer` | `buyerId: String!` |
-| booking | Query | `ticketsByBuyerCursorPagination` | `buyerId: String!, status: TicketStatus, pagination: CursorPaginationInput` |
-| booking | Query | `ticketsByBuyerOffsetPagination` | `buyerId: String!, status: TicketStatus, pagination: OffsetPaginationInput` |
-
-### `ADMIN or INTERNAL_SERVICE or SCOPE_internal-write` — 1 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Mutation | `createEscrowAccount` | `input: CreateEscrowAccountInput!` |
-
-### `ADMIN or ORGANIZER` — 10 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Mutation | `activatePromoCode` | `id: ID!` |
-| booking | Mutation | `createPromoCode` | `input: CreatePromoCodeInput!` |
-| booking | Mutation | `deactivatePromoCode` | `id: ID!` |
-| booking | Mutation | `deletePromoCode` | `id: ID!` |
-| booking | Mutation | `updatePromoCode` | `id: ID!, input: UpdatePromoCodeInput!` |
-| booking | Query | `promoCode` | `id: ID!` |
-| booking | Query | `promoCodeByCode` | `code: String!` |
-| identity | Mutation | `setBankAccount` | `organizationId: ID!, input: SetBankAccountInput!` |
-| identity | Mutation | `setMobileMoneyAccount` | `organizationId: ID!, input: SetMobileMoneyAccountInput!` |
-| identity | Mutation | `updatePayoutConfig` | `organizationId: ID!, input: UpdatePayoutConfigInput!` |
-
-### `ADMIN or SUPER_ADMIN` — 48 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
 | identity | Mutation | `acknowledgeAlert` | `id: ID!` |
 | identity | Mutation | `activateUser` | `id: ID!` |
 | identity | Mutation | `addUserRole` | `userId: ID!, role: UserType!` |
@@ -377,9 +433,6 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Query | `organizationCount` | `status: OrganizationStatus` |
 | identity | Query | `organizations` | `search: String, status: OrganizationStatus, verified: Boolean, kybStatus: KybStatus, pagination: OffsetPaginationInput` |
 | identity | Query | `pendingVerificationDocuments` | — |
-| identity | Query | `permission` | `code: String!` |
-| identity | Query | `permissions` | — |
-| identity | Query | `rolePermissions` | `role: String!` |
 | identity | Query | `serviceHealth` | — |
 | identity | Query | `staffAccounts` | `search: String, role: UserType, pagination: OffsetPaginationInput` |
 | identity | Query | `systemAlerts` | `status: AlertStatus, severity: AlertSeverity` |
@@ -393,24 +446,40 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Query | `usersByRole` | `role: UserType!, activeOnly: Boolean = true, pagination: OffsetPaginationInput` |
 | identity | Query | `verificationDocuments` | `organizationId: ID!, status: DocumentStatus` |
 
-### `AUTHENTICATED` — 128 operation(s)
+### `AUTHENTICATED` — 150 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
+| booking | Mutation | `acceptTicketTransfer` | `transferId: ID!` |
+| booking | Mutation | `cancelRefundRequest` | `refundRequestId: ID!, reason: String!` |
+| booking | Mutation | `cancelReservation` | `reservationId: ID!` |
+| booking | Mutation | `cancelTicketTransfer` | `transferId: ID!` |
 | booking | Mutation | `confirmBankVerification` | `id: ID!, amount: BigDecimal!` |
 | booking | Mutation | `createBankAccount` | `input: CreateBankAccountInput!` |
 | booking | Mutation | `createPayoutRequest` | `input: CreatePayoutRequestInput!` |
+| booking | Mutation | `createUserRefundRequest` | `input: CreateRefundRequestInput!` |
+| booking | Mutation | `declineTicketTransfer` | `transferId: ID!` |
 | booking | Mutation | `deleteBankAccount` | `id: ID!` |
+| booking | Mutation | `initiateTicketTransfer` | `input: InitiateTicketTransferInput!` |
+| booking | Mutation | `payReservation` | `input: PayReservationInput!` |
+| booking | Mutation | `refundTicket` | `ticketNumber: String!, reason: String!, amount: BigDecimal` |
 | booking | Mutation | `resendTicket` | `ticketId: ID!` |
+| booking | Mutation | `reserveTickets` | `input: ReserveTicketsInput!` |
+| booking | Mutation | `reviewConflict` | `id: ID!, note: String!` |
 | booking | Mutation | `setDefaultBankAccount` | `id: ID!` |
 | booking | Mutation | `startBankVerification` | `id: ID!` |
 | booking | Mutation | `updateBankAccount` | `id: ID!, input: UpdateBankAccountInput!` |
+| booking | Mutation | `uploadScans` | `inputs: [ValidateTicketInput!]!` |
+| booking | Mutation | `validateTicket` | `input: ValidateTicketInput!` |
 | booking | Query | `bankAccount` | `id: ID!` |
 | booking | Query | `bankAccountsByOrganizer` | `organizerId: String!` |
 | booking | Query | `booking` | `id: ID!` |
 | booking | Query | `bookingByNumber` | `bookingNumber: String!` |
 | booking | Query | `bookingsByBuyer` | `buyerId: String!, filter: BookingFilterInput, pagination: OffsetPaginationInput` |
+| booking | Query | `checkInConflicts` | `eventId: ID!, pagination: OffsetPaginationInput` |
+| booking | Query | `checkInSummary` | `eventId: ID!` |
 | booking | Query | `defaultBankAccount` | `organizerId: String!` |
+| booking | Query | `myBookings` | `filter: BookingFilterInput, pagination: OffsetPaginationInput` |
 | booking | Query | `myCheckInRate` | — |
 | booking | Query | `myDashboardStats` | — |
 | booking | Query | `myEscrowAccounts` | `organizationId: ID, pagination: OffsetPaginationInput` |
@@ -422,11 +491,17 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | booking | Query | `myRefundRequests` | `pagination: OffsetPaginationInput` |
 | booking | Query | `myRevenueSeries` | `months: Int` |
 | booking | Query | `myTicketMix` | — |
+| booking | Query | `myTicketTransfers` | `direction: TransferDirection, status: TicketTransferStatus, pagination: OffsetPaginationInput` |
 | booking | Query | `myTransactions` | `filter: OrganizerTransactionFilterInput, pagination: OffsetPaginationInput` |
 | booking | Query | `myUpcomingEvents` | `limit: Int` |
+| booking | Query | `payoutEligibility` | `eventId: ID!` |
+| booking | Query | `recentCheckIns` | `eventId: ID!, limit: Int = 25` |
 | booking | Query | `reservation` | `id: ID!` |
 | booking | Query | `ticketTransferChain` | `ticketId: ID!` |
+| booking | Query | `transferRecipient` | `channel: TransferChannel!, value: String!` |
 | booking | Query | `validatePromoCode` | `code: String!, eventId: ID!, amount: BigDecimal` |
+| catalog | Mutation | `unlockTierWithAccessCode` | `eventId: ID!, accessCode: String!` |
+| catalog | Query | `recommendedEvents` | `basedOnEventIds: [ID!], first: Int = 10` |
 | identity | Mutation | `acceptInvitation` | `token: String!` |
 | identity | Mutation | `acceptOwnershipTransfer` | `token: String!, confirmationCode: String!` |
 | identity | Mutation | `applyToBeOrganizer` | `input: OrganizationApplicationInput!` |
@@ -526,109 +601,17 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Query | `userEventAccess` | `userId: ID!, eventId: ID!` |
 | identity | Query | `verificationDocument` | `id: ID!` |
 
-### `CUSTOMER` — 14 operation(s)
+### `FINANCE or SUPER_ADMIN` — 1 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
-| booking | Mutation | `acceptTicketTransfer` | `transferId: ID!` |
-| booking | Mutation | `cancelRefundRequest` | `refundRequestId: ID!, reason: String!` |
-| booking | Mutation | `cancelReservation` | `reservationId: ID!` |
-| booking | Mutation | `cancelTicketTransfer` | `transferId: ID!` |
-| booking | Mutation | `createUserRefundRequest` | `input: CreateRefundRequestInput!` |
-| booking | Mutation | `declineTicketTransfer` | `transferId: ID!` |
-| booking | Mutation | `initiateTicketTransfer` | `input: InitiateTicketTransferInput!` |
-| booking | Mutation | `payReservation` | `input: PayReservationInput!` |
-| booking | Mutation | `reserveTickets` | `input: ReserveTicketsInput!` |
-| booking | Query | `myBookings` | `filter: BookingFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `myTicketTransfers` | `direction: TransferDirection, status: TicketTransferStatus, pagination: OffsetPaginationInput` |
-| booking | Query | `transferRecipient` | `channel: TransferChannel!, value: String!` |
-| catalog | Mutation | `unlockTierWithAccessCode` | `eventId: ID!, accessCode: String!` |
-| catalog | Query | `recommendedEvents` | `basedOnEventIds: [ID!], first: Int = 10` |
-
-### `FINANCE` — 18 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Mutation | `confirmRecoveryAction` | `proposalId: ID!, reason: String!` |
-| booking | Mutation | `createAdminRefundRequest` | `ticketId: ID!, reason: String!, bypassApproval: Boolean, amount: BigDecimal, idempotencyKey: String!` |
-| booking | Mutation | `holdPayoutRequest` | `payoutRequestId: ID!, reason: String!` |
-| booking | Mutation | `proposeRecoveryAction` | `input: ProposeRecoveryActionInput!` |
-| booking | Mutation | `releasePayoutHold` | `payoutRequestId: ID!, note: String` |
-| booking | Mutation | `resumePaymentAttempt` | `depositId: String!` |
-| booking | Mutation | `retryPaymentAttempts` | `depositIds: [String!]!` |
-| booking | Mutation | `transferBetweenPlatformAccounts` | `input: PlatformTransferInput!` |
-| booking | Mutation | `updateChargebackRecovery` | `id: ID!, input: UpdateChargebackRecoveryInput!` |
-| booking | Mutation | `withdrawRecoveryProposal` | `proposalId: ID!` |
-| booking | Query | `commissionRecords` | `filter: CommissionFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `dualControlQueue` | — |
-| booking | Query | `gatewaySettlements` | `filter: GatewaySettlementFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `myRecoveryProposals` | — |
-| booking | Query | `paymentAttemptSearch` | `filter: PaymentAttemptFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `paymentRiskSummary` | `windowHours: Int = 24` |
-| booking | Query | `pendingRecoveryProposals` | — |
-| booking | Query | `stuckTransactions` | `minutes: Int = 30, pagination: OffsetPaginationInput` |
+| booking | Mutation | `processRefundRequest` | `refundRequestId: ID!` |
 
 ### `INTERNAL` — 1 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | catalog | Mutation | `completeEvent` | `id: ID!` |
-
-### `ORGANIZER` — 51 operation(s)
-
-| Subgraph | Kind | Operation | Arguments |
-|---|---|---|---|
-| booking | Mutation | `cancelTicket` | `ticketNumber: String!, reason: String!` |
-| booking | Mutation | `messageTicketHolders` | `eventId: ID!, input: MessageTicketHoldersInput!` |
-| booking | Mutation | `refundTicket` | `ticketNumber: String!, reason: String!, amount: BigDecimal` |
-| booking | Mutation | `reviewConflict` | `id: ID!, note: String!` |
-| booking | Mutation | `uploadScans` | `inputs: [ValidateTicketInput!]!` |
-| booking | Mutation | `validateTicket` | `input: ValidateTicketInput!` |
-| booking | Query | `bookingsByOrganizer` | `organizationId: ID, filter: BookingFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `checkInConflicts` | `eventId: ID!, pagination: OffsetPaginationInput` |
-| booking | Query | `checkInSummary` | `eventId: ID!` |
-| booking | Query | `payoutEligibility` | `eventId: ID!` |
-| booking | Query | `purchasesByDayAndHour` | `from: DateTime, to: DateTime, eventId: ID, organizationId: ID` |
-| booking | Query | `recentCheckIns` | `eventId: ID!, limit: Int = 25` |
-| booking | Query | `refundRequestsByOrganizer` | `organizationId: ID, filter: RefundRequestFilterInput, pagination: OffsetPaginationInput` |
-| booking | Query | `salesOverTime` | `eventId: ID!, from: DateTime, to: DateTime, bucket: SalesBucket = DAY` |
-| booking | Query | `ticketHolderAudience` | `eventId: ID!, segment: HolderSegment = ALL, ticketTierId: String` |
-| booking | Query | `ticketHolderMessages` | `eventId: ID!, pagination: OffsetPaginationInput` |
-| catalog | Mutation | `activateTicketTier` | `tierId: ID!` |
-| catalog | Mutation | `cancelEvent` | `id: ID!, input: EventCancellationInput!` |
-| catalog | Mutation | `cancelScheduledPublish` | `eventId: ID!` |
-| catalog | Mutation | `createEvent` | `input: CreateEventInput!` |
-| catalog | Mutation | `createTicketTier` | `eventId: ID!, input: CreateTicketTierInput!` |
-| catalog | Mutation | `deactivateTicketTier` | `tierId: ID!` |
-| catalog | Mutation | `deleteEvent` | `id: ID!` |
-| catalog | Mutation | `deleteMedia` | `id: ID!` |
-| catalog | Mutation | `deleteTicketTier` | `tierId: ID!` |
-| catalog | Mutation | `duplicateEvent` | `eventId: ID!, newTitle: String!` |
-| catalog | Mutation | `publishEvent` | `id: ID!` |
-| catalog | Mutation | `reorderTicketTiers` | `eventId: ID!, tierIds: [ID!]!` |
-| catalog | Mutation | `rescheduleEvent` | `input: RescheduleEventInput!` |
-| catalog | Mutation | `submitEventForApproval` | `eventId: ID!` |
-| catalog | Mutation | `unpublishEvent` | `id: ID!` |
-| catalog | Mutation | `updateEvent` | `id: ID!, input: UpdateEventInput!` |
-| catalog | Mutation | `updateEventAccessibility` | `eventId: ID!, input: EventAccessibilityInput!` |
-| catalog | Mutation | `updateEventCapacity` | `eventId: ID!, newCapacity: Int!` |
-| catalog | Mutation | `updateMedia` | `id: ID!, input: UpdateMediaInput!` |
-| catalog | Mutation | `updateTicketTier` | `tierId: ID!, input: UpdateTicketTierInput!` |
-| catalog | Mutation | `uploadMedia` | `input: UploadMediaInput!` |
-| catalog | Query | `allowedStatusTransitions` | `eventId: String!` |
-| catalog | Query | `draftEvents` | `organizerId: String!, pagination: OffsetPaginationInput` |
-| catalog | Query | `eventCountByOrganizer` | `organizerId: String!` |
-| catalog | Query | `eventLifecycle` | `eventId: String!` |
-| catalog | Query | `eventStatistics` | `eventId: ID!` |
-| catalog | Query | `eventTicketTiers` | `eventId: ID!, includeHidden: Boolean = false` |
-| catalog | Query | `myDraftEvents` | `pagination: OffsetPaginationInput` |
-| catalog | Query | `myEventCount` | — |
-| catalog | Query | `myEventCountByStatus` | `status: EventStatus!` |
-| catalog | Query | `myEvents` | `filter: OrganizerEventFilterInput, pagination: OffsetPaginationInput` |
-| catalog | Query | `myEventsConnection` | `filter: OrganizerEventFilterInput, pagination: CursorPaginationInput` |
-| catalog | Query | `myMedia` | `filter: MediaFilterInput, pagination: CursorPaginationInput` |
-| catalog | Query | `stockImages` | `filter: StockImageFilterInput, pagination: CursorPaginationInput` |
-| catalog | Query | `ticketTierStatistics` | `eventId: ID!, tierId: ID!` |
 
 ### `PUBLIC` — 26 operation(s)
 
@@ -661,9 +644,10 @@ mvn -q -pl shared-library test -Dtest=FrontendContractLintTest -Dcontract.write=
 | identity | Query | `invitationByToken` | `token: String!` |
 | identity | Query | `publicPlatformRules` | — |
 
-### `SUPER_ADMIN` — 2 operation(s)
+### `SUPER_ADMIN` — 3 operation(s)
 
 | Subgraph | Kind | Operation | Arguments |
 |---|---|---|---|
 | booking | Mutation | `forceCompletePaymentAttempts` | `depositIds: [String!]!, reason: String!` |
+| catalog | Mutation | `updatePlatformConfiguration` | `input: UpdatePlatformConfigurationInput!` |
 | identity | Mutation | `resetStaffTemporaryPassword` | `userId: ID!` |

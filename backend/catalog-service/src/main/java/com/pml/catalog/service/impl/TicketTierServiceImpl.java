@@ -57,8 +57,8 @@ public class TicketTierServiceImpl implements TicketTierService {
      * A tier the caller is entitled to act on, or {@code TIER_UNKNOWN}.
      *
      * <h2>Why every write goes through here</h2>
-     * These mutations carry {@code @PreAuthorize("hasAnyRole('ADMIN','ORGANIZER')")} and
-     * then act on a caller-supplied {@code tierId}. A role says the caller may edit
+     * These mutations carry {@code @RequiresTenantPermission(EVENT_EDIT)} and
+     * then act on a caller-supplied {@code tierId}. A permission says the caller may edit
      * ticket tiers; it cannot say <em>which</em>. Without this, any account holding
      * the {@code ORGANIZER} realm role could reprice or delete any other
      * organization's tiers by id — OWASP A01:2021, in its CWE-639 form.

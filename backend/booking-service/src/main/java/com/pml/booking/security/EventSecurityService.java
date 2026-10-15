@@ -81,4 +81,26 @@ public class EventSecurityService {
                 && authentication.getPrincipal() instanceof Jwt jwt
                 && com.pml.shared.security.AccountIdentity.userIdOf(jwt) != null;
     }
+
+    /** Holds the permission on the platform, or acts for the organization the event belongs to. */
+    public Mono<Boolean> permissionOrEventOrganizer(Authentication authentication, String permissionCode, String eventId) {
+        if (com.pml.shared.security.PermissionGuards.holdsPermission(authentication, permissionCode)) {
+            return Mono.just(true);
+        }
+        if (eventId == null || eventId.isBlank()) {
+            return Mono.just(false);
+        }
+        return isEventOrganizer(eventId, authentication);
+    }
+
+    /** Holds the permission on the platform, or acts for the organization the escrow account belongs to. */
+    public Mono<Boolean> permissionOrEscrowOwner(Authentication authentication, String permissionCode, String escrowAccountId) {
+        if (com.pml.shared.security.PermissionGuards.holdsPermission(authentication, permissionCode)) {
+            return Mono.just(true);
+        }
+        if (escrowAccountId == null || escrowAccountId.isBlank()) {
+            return Mono.just(false);
+        }
+        return isEscrowOwner(escrowAccountId, authentication);
+    }
 }

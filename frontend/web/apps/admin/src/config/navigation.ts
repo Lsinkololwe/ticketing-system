@@ -4,6 +4,7 @@
  */
 import type { IconName } from '@pml.tickets/shared';
 import type { UserType } from '@pml.tickets/shared/types/graphql';
+import { PLATFORM_ROLE_GRANTS, type PermissionCode } from '@pml.tickets/shared/generated/permission-codes';
 
 /** The platform roles that sign in to this console: a subset of the generated `UserType`. */
 export type StaffRole = Extract<UserType, 'SUPER_ADMIN' | 'ADMIN' | 'FINANCE' | 'FINANCE_LEAD'>;
@@ -40,6 +41,8 @@ export type ModuleId =
 export interface ModuleTab {
   id: string;
   label: string;
+  /** The permission that opens this tab; when absent the module's own permission does. */
+  permission?: PermissionCode;
 }
 
 export interface ConsoleModule {
@@ -48,76 +51,70 @@ export interface ConsoleModule {
   icon: IconName;
   /** Base path; modules with tabs live at `/<path>/<tab>`. */
   path: string;
-  roles: readonly StaffRole[];
+  /** The permission that opens the module; absent means every signed-in staff member. */
+  permission?: PermissionCode;
   group: string;
   tabs?: ModuleTab[];
-  /** Per-role tab allow-list (module default: every tab). */
-  roleTabs?: Partial<Record<StaffRole, string[]>>;
 }
 
-const ALL: readonly StaffRole[] = STAFF_ROLES;
-const OPS: readonly StaffRole[] = ['SUPER_ADMIN', 'ADMIN'];
-
 export const MODULES: ConsoleModule[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', path: '/dashboard', roles: ALL, group: 'Overview' },
+  { id: 'dashboard', label: 'Dashboard', icon: 'dashboard', path: '/dashboard',  group: 'Overview' },
   {
-    id: 'approvals', label: 'Approvals', icon: 'check-circle', path: '/approvals', roles: OPS, group: 'Review',
-    tabs: [{ id: 'orgs', label: 'Organizers' }, { id: 'events', label: 'Events' }, { id: 'docs', label: 'Documents' }],
+    id: 'approvals', label: 'Approvals', icon: 'check-circle', path: '/approvals', permission: 'approval:view', group: 'Review',
+    tabs: [{ id: 'orgs', label: 'Organizers' }, { id: 'events', label: 'Events' }, { id: 'docs', label: 'Documents', permission: 'kyb_document:view' }],
   },
   {
-    id: 'events', label: 'Events', icon: 'calendar', path: '/events', roles: OPS, group: 'Platform',
+    id: 'events', label: 'Events', icon: 'calendar', path: '/events', permission: 'catalog:view', group: 'Platform',
     tabs: [
       { id: 'all', label: 'All events' },
       { id: 'categories', label: 'Categories' },
       { id: 'locations', label: 'Provinces and cities' },
-      { id: 'media', label: 'Media moderation' },
-      { id: 'stock', label: 'Stock images' },
+      { id: 'media', label: 'Media moderation', permission: 'media_moderation:view' },
+      { id: 'stock', label: 'Stock images', permission: 'stock_image:manage' },
     ],
   },
   {
-    id: 'users', label: 'Users & orgs', icon: 'users', path: '/users', roles: OPS, group: 'Platform',
-    tabs: [{ id: 'users', label: 'Users' }, { id: 'orgs', label: 'Organizations' }],
+    id: 'users', label: 'Users & orgs', icon: 'users', path: '/users', permission: 'user:view', group: 'Platform',
+    tabs: [{ id: 'users', label: 'Users' }, { id: 'orgs', label: 'Organizations', permission: 'organization_directory:view' }],
   },
   {
-    id: 'finance', label: 'Finance', icon: 'card', path: '/finance', roles: ALL, group: 'Money',
+    id: 'finance', label: 'Finance', icon: 'card', path: '/finance', permission: 'financial:view', group: 'Money',
     tabs: [
-      { id: 'payouts', label: 'Payout requests' },
-      { id: 'refunds', label: 'Refund requests' },
-      { id: 'escrow', label: 'Escrow accounts' },
-      { id: 'chargebacks', label: 'Chargebacks' },
-      { id: 'banks', label: 'Payout accounts' },
+      { id: 'payouts', label: 'Payout requests', permission: 'payout:view' },
+      { id: 'refunds', label: 'Refund requests', permission: 'refund:view' },
+      { id: 'escrow', label: 'Escrow accounts', permission: 'escrow:view' },
+      { id: 'chargebacks', label: 'Chargebacks', permission: 'chargeback:view' },
+      { id: 'banks', label: 'Payout accounts', permission: 'bank_account:view' },
     ],
   },
   {
-    id: 'ledger', label: 'Ledger', icon: 'receipt', path: '/ledger', roles: ALL, group: 'Money',
+    id: 'ledger', label: 'Ledger', icon: 'receipt', path: '/ledger', permission: 'ledger:view', group: 'Money',
     tabs: [
-      { id: 'coa', label: 'Chart of accounts' },
+      { id: 'coa', label: 'Chart of accounts', permission: 'ledger:view' },
       { id: 'journal', label: 'Journal entries' },
       { id: 'tb', label: 'Trial balance' },
-      { id: 'platform', label: 'Platform accounts' },
-      { id: 'commission', label: 'Commission' },
-      { id: 'recon', label: 'Reconciliation' },
+      { id: 'platform', label: 'Platform accounts', permission: 'platform_account:view' },
+      { id: 'commission', label: 'Commission', permission: 'commission:view' },
+      { id: 'recon', label: 'Reconciliation', permission: 'reconciliation:view' },
     ],
   },
   {
-    id: 'transactions', label: 'Transactions', icon: 'server', path: '/transactions', roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE', 'FINANCE_LEAD'], group: 'Operations',
+    id: 'transactions', label: 'Transactions', icon: 'server', path: '/transactions', group: 'Operations',
     tabs: [
-      { id: 'payments', label: 'Payments' },
-      { id: 'tickets', label: 'Tickets' },
-      { id: 'reservations', label: 'Reservations' },
-      { id: 'recovery', label: 'Transaction recovery' },
-      { id: 'refdata', label: 'Reference data' },
-      { id: 'audit', label: 'Audit log' },
-      { id: 'announce', label: 'Announcements' },
+      { id: 'payments', label: 'Payments', permission: 'payment:view' },
+      { id: 'tickets', label: 'Tickets', permission: 'ticket:view' },
+      { id: 'reservations', label: 'Reservations', permission: 'reservation:view' },
+      { id: 'recovery', label: 'Transaction recovery', permission: 'transaction:recover' },
+      { id: 'refdata', label: 'Reference data', permission: 'reference_data:manage' },
+      { id: 'audit', label: 'Audit log', permission: 'audit:view' },
+      { id: 'announce', label: 'Announcements', permission: 'platform:manage' },
     ],
-    // Finance reads the money view of the audit log and nothing else in this module.
-    roleTabs: { FINANCE: ['audit'], FINANCE_LEAD: ['payments', 'reservations', 'recovery', 'audit'] },
   },
-  { id: 'analytics', label: 'Analytics', icon: 'chart', path: '/analytics', roles: ALL, group: 'Operations' },
-  { id: 'health', label: 'Health', icon: 'pulse', path: '/health', roles: ['SUPER_ADMIN', 'ADMIN', 'FINANCE_LEAD'], group: 'Operations' },
+  { id: 'analytics', label: 'Analytics', icon: 'chart', path: '/analytics', permission: 'statistics:view', group: 'Operations' },
+  { id: 'health', label: 'Health', icon: 'pulse', path: '/health', permission: 'platform:view', group: 'Operations' },
   {
-    id: 'config', label: 'Settings', icon: 'cog', path: '/config', roles: OPS, group: 'Setup',
-    tabs: [{ id: 'rules', label: 'Platform rules' }, { id: 'roles', label: 'Roles and access' }, { id: 'refdata', label: 'Reference data' }],
+    id: 'config', label: 'Settings', icon: 'cog', path: '/config', permission: 'platform:view', group: 'Setup',
+    tabs: [{ id: 'rules', label: 'Platform rules' }, { id: 'roles', label: 'Roles and access', permission: 'permission:view' }, { id: 'refdata', label: 'Reference data', permission: 'reference_data:manage' }],
   },
 ];
 
@@ -129,20 +126,27 @@ export function staffRolesOf(roles: readonly string[] | undefined): StaffRole[] 
   return STAFF_ROLES.filter((r) => set.has(r));
 }
 
-export function canOpenModule(roles: readonly StaffRole[], id: ModuleId): boolean {
-  return MODULE_BY_ID[id].roles.some((r) => roles.includes(r));
+/**
+ * Whether the permissions held open the module: its own permission, and for a module made of tabs at
+ * least one tab. A module with no permission is open to every signed-in staff member.
+ */
+export function canOpenModule(held: readonly string[], id: ModuleId): boolean {
+  const m = MODULE_BY_ID[id];
+  if (m.permission && !held.includes(m.permission)) return false;
+  return m.tabs ? tabsFor(held, id).length > 0 : true;
 }
 
-/** Tabs of a module that the given roles may open (union across roles). */
-export function tabsFor(roles: readonly StaffRole[], id: ModuleId): ModuleTab[] {
+/** Tabs of a module that the held permissions may open. */
+export function tabsFor(held: readonly string[], id: ModuleId): ModuleTab[] {
   const m = MODULE_BY_ID[id];
   if (!m.tabs) return [];
-  const allowed = new Set<string>();
-  for (const r of roles) {
-    if (!m.roles.includes(r)) continue;
-    (m.roleTabs?.[r] ?? m.tabs.map((t) => t.id)).forEach((t) => allowed.add(t));
-  }
-  return m.tabs.filter((t) => allowed.has(t.id));
+  if (m.permission && !held.includes(m.permission)) return [];
+  return m.tabs.filter((t) => !t.permission || held.includes(t.permission));
+}
+
+/** The permissions a staff role grants on its own: what the navigation matrix shows per role. */
+export function grantsOf(role: StaffRole): readonly PermissionCode[] {
+  return PLATFORM_ROLE_GRANTS[role];
 }
 
 /** Labels on the phone bottom bar (the prototype's rail names). */
@@ -166,6 +170,6 @@ export function moduleOfPath(pathname: string): ModuleId | null {
   return MODULES.find((m) => m.path === `/${first}`)?.id ?? null;
 }
 
-export function modulesFor(roles: readonly StaffRole[]): ConsoleModule[] {
-  return MODULES.filter((m) => canOpenModule(roles, m.id));
+export function modulesFor(held: readonly string[]): ConsoleModule[] {
+  return MODULES.filter((m) => canOpenModule(held, m.id));
 }

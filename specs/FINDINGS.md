@@ -4855,3 +4855,252 @@ specs have not been done.
    `platform.wide.audit.delivery.failed` and on the age gauge.
 8. The identity retention decision leaves `payout_config_audit_logs` and the other audit-like collections as they were; none
    carries an expiry index.
+
+## F-069 · 2026-10-13 · The permission engine has one decision function, three hierarchies became one, and an organization's profile is no longer readable by anyone signed in
+
+**What was found.**
+- `organization(id)`, `organizationBySlug` and `organizationByOwnerId` required only a signed-in caller and returned the whole
+  profile: tax number, registration number, business phone and email, payout configuration, review reasons. A buyer could read
+  any organizer's by id, slug or owner id. They now answer the owner, a member holding `organization:view` and platform staff;
+  anyone else reads what an unknown organization reads (D-55).
+- `EscrowServiceImpl` asked identity for the literal `"escrow:read"`, a name not in the catalogue, so the method could never
+  succeed; it was reachable by no caller. It now asks for `financial:view`, and guards take a `Permission`, not a string.
+- Nine catalogue permissions were granted to roles and enforced nowhere. Three are now enforced (`bank:manage`,
+  `promotion:manage`, `organization:view`); five are enforced by `@RequiresPermission`; `platform:configure` is registered below.
+- Any organization member who held the organizer role could create, change, activate and delete promo codes. They need
+  `promotion:manage` now (marketer, manager, admin, owner).
+- Bank accounts followed the payout switch. They follow `bank:manage` (owner and admin, switch or not) and still need an
+  approved organization (D-54).
+- Three platform-role hierarchies had to agree by hand (the permission enum, the staff rank rule, the schema directive) and
+  `ROLE_*` literals appeared in a dozen places. There is one `PlatformRole` and one `Authorities`; a lint keeps literals out.
+- `Organization.canPerform` ended in `default -> true`, so a new permission passed the status gate silently. It is exhaustive.
+- The effective set (`myEffectivePermissions`) was computed apart from the checks and could disagree with them for platform
+  staff who are also members, and for a grant from another organization.
+
+**What was built.**
+- `identity-service/.../authorization`: `PermissionDecider` (pure; the order is written once), `DecisionContext`,
+  `DecisionContextLoader` (reads, decides nothing, skips membership and grant reads when a platform role settles the answer),
+  `DecisionStep` (the deciding step is an enum), `DelegationPolicy`. `PermissionResolutionServiceImpl` is a facade over them;
+  the effective set is the decider run over the catalogue.
+- `shared-library`: `PlatformRole`, `Authorities`, typed `Permission.Action` with a grammar check at class load,
+  `@RequiresPermission` and its aspect (Mono and Flux), a generated `permission-codes.ts` kept current by a test.
+- booking: `OrganizationPermissionCheck` (one fail-closed question), `PromoCodeAccess`, `PayoutAccess.mayManageBankAccounts`.
+- frontend: `PermissionCode` union generated from the enum; `PermissionGate`, `useMyPermissions` and `useAccessControl` take it.
+
+**How it is checked** (container-backed where state is involved).
+`PermissionDecisionTableTest` (17, MongoDB replica set via Testcontainers, real repositories): every step and outcome, the
+expiry boundary at the instant and a second either side, a grant from another organization, tampered stored codes, the status
+gate with platform staff exempt, the effective set equal to the checks for eleven kinds of caller, delegation in both
+directions, D-54 and D-55. `OrganizationProfileReadTest` (3, same harness): owner, contributor and staff read; buyer, removed
+member, another organizer and a member denied `organization:view` read nothing by id, slug and owner. Shared library:
+`PermissionGrammarTest`, `PlatformRoleEquivalenceTest` (old rules reproduced in full over all 64 role combinations),
+`PermissionNameLintTest` (now catches any `module:verb` literal under any module), `AuthorityLiteralLintTest`,
+`PermissionEnforcementTest`, `RequiresPermissionAspectTest` (a proxied bean), `PermissionCodesFrontendFileTest`.
+Booking: `PromoCodeAccessTest`, `BankAccountAccessTest`. Frontend: `permission-codes.test.ts` (including type tests).
+`mvn verify -Dgroups=ET-PLT-013` is green: 127 shared, 20 identity, plus booking. Wider subsets run clean: identity 440,
+booking 140, catalog security 76, shared security/graphql/config 496.
+
+**Owner decisions applied:** D-54 to D-60 (ROADMAP).
+
+**Open.**
+1. `updatePlatformConfiguration` is gated by the administrator role, while the catalogue grants `platform:configure` to the
+   super administrator only. Which is intended is undecided; the permission sits on the register in `PermissionEnforcementTest`.
+2. A grant on an event is not subject to the organization's status gate (as before). A suspended organization's external
+   steward keeps what the grant gives. Undecided whether that is intended.
+3. Platform-role allows on the identity decision path are not audited by the decider; the audited reaches stay where
+   `PlatformWideAccess` already records them (D-57's audit clause is not yet proved end to end).
+4. Not built: the shared `IdentityAuthorizationClient`, `check-many`, the decision latency metric, removal of the retired
+   collection constants and rewrites (P6, P8), the Playwright specs for the read-only matrix.
+5. The profile read change is not exercised through the GraphQL layer and the router; only through the resolver. Callers of
+   `organization(id)` in the organizer and admin apps were not run against it.
+
+
+
+## F-070 · 2026-10-14 · Running the permission engine against the real stack found five defects the container tests could not
+
+The ET-PLT-013 work was exercised with a real Keycloak (staff realm, password and authenticator), the real router, gateway,
+identity, booking, catalog, Mongo, Redis and Temporal, driven from the admin app in Chrome. Users were created through the
+workflow (a super admin creating a finance officer), not seeded.
+
+**What was found.**
+1. **The composed supergraph was stale and the router rejected a live operation.** `docker-resources/apollo-router/ticketing/supergraph.graphql`
+   was composed on 2026-10-11 and still declared `createUser: User!`; the backend returns `CreateStaffUserResult!`. The admin
+   app's `IdentityAdminCreateUser` got HTTP 400, so no staff account could be created from the UI. Recomposing with
+   `compose-supergraph.sh --static` and restarting the router fixed it. Nothing fails a build or a start when the committed
+   supergraph disagrees with the subgraph SDL it was meant to compose.
+2. **`journalEntries` and its five siblings in `JournalEntryQueryResolver` are gated by `hasRole('ADMIN')`**, so a finance user
+   is refused the ledger journal that the finance dashboard and the Ledger page request. The dashboard shows "Something went
+   wrong". The check is outside the catalogue.
+3. **Role-literal checks dominate.** About 330 `@PreAuthorize("hasRole/hasAnyRole(...)")` checks remain across identity (55),
+   catalog (98) and booking (177), against 9 `@RequiresPermission` methods. The catalogue governs a thin slice of the platform.
+4. **A staff user's first sign-in after the forced password change fails once.** The callback is refused with
+   `tombstoned_sid` (the session id is revoked by the credential change) and shows "Sign-in failed"; the second attempt works.
+5. **`suspendOrganization` on an unknown id is an `INTERNAL` defect** (`IllegalArgumentException: Organization not found`) where
+   `approveOrganization` answers the typed `ORGANIZATION_UNKNOWN`.
+
+Also observed: platform roles are resolved from the identity Mongo user record, not the token. Staff imported straight into the
+realm have no such record and read an organization profile as `null`; a workflow-created staff user reads it. An unauthenticated
+call is refused, but its error text names the subgraph (`HTTP fetch failed from 'identity': 401`).
+
+**What was proven.** Admin: approve, suspend, escrow, payout approval, promo code, bank account and the audit log are all
+reachable. Finance: approve, suspend and promo codes are `FORBIDDEN`; escrow and payout approval pass the guard; the audit log
+returns the finance-scoped (empty) list; the organization profile reads for a workflow-created finance user.
+
+**Not proven.** An organizer reading another organizer's profile, promo codes and bank accounts; a customer's refusals. They need
+two organizers created through apply and approve. The Service Bus emulator was not running (RabbitMQ owns 5672), so the outbox
+to bus path and the booking catalog consumer were not exercised.
+
+
+## F-071 · 2026-10-14 · The F-070 defects, fixed and proven live; RabbitMQ replaces Azure Service Bus; organizer isolation proven between two workflow-created organizations
+
+Every user below was created through the platform's own procedure: staff through the super admin's staff-account workflow
+(temporary password shown once, authenticator enrolment and a forced password change at first sign-in), organizers through
+the OTP sign-up, `applyToBeOrganizer`, the KYB document upload, `submitOrganizationForReview` and an admin's
+`approveOrganization`. Nothing was seeded.
+
+**Fixed, each with a test and a live proof (the real Keycloak, router, gateway, services, Mongo, Redis, Temporal and RabbitMQ).**
+1. *Stale supergraph.* Recomposed (`compose-supergraph.sh --static`) and the router restarted; the create-staff operation
+   works from the admin app. **Still open:** nothing fails a build or a start when the committed supergraph disagrees with the
+   subgraph SDL.
+2. *Ledger gate.* `JournalEntryQueryResolver` (six queries) and `trialBalance` are `@RequiresPermission(FINANCIAL_VIEW)`
+   instead of `hasRole('ADMIN')`. A workflow-created finance user reads them and the dashboard card renders.
+3. *Role literals (D-61).* `RoleLiteralBudgetLintTest` is a ratchet: identity 49, catalog 98, booking 146 (167 at the start). A
+   method carrying `@RequiresPermission` may not also carry a role literal. **Open:** the remaining 293 sites need a
+   permission each; most have no catalogue permission yet, which is a catalogue decision (names and role grants).
+4. *First sign-in after the forced password change* failed with `tombstoned_sid`, and after a first fix was still bounced
+   to login with `token_revoked`. Two causes, both fixed: Keycloak reports the credential change made *during* a sign-in with
+   no session id although the session exists (the listener now supplies the sign-in's root authentication-session id, which
+   Keycloak uses as the user-session id), and identity cut "every session but the named one" asynchronously after the new
+   session existed (it now cuts only sessions that started before the change). Proven with a brand-new staff user.
+5. *Suspend, unsuspend and approve of an unknown organization* answer `NOT_FOUND / ORGANIZATION_UNKNOWN`; suspend and
+   unsuspend threw an untyped `IllegalArgumentException` (`INTERNAL`).
+6. *`@PreAuthorize("hasAnyRole(...) or @bean.isX(...)")` crashed for everyone the role did not admit.* SpEL cannot turn the
+   `Mono<Boolean>` a reactive bean returns into a Boolean inside `or`, so the *legitimate owner* (an organizer on their own
+   event's promo codes, a ticket owner, a refund requester) got `INTERNAL_ERROR`. The organization beans already had a
+   one-expression form (`rolesOrTeamMember`); the event, escrow, ticket and refund beans did not. 19 sites rewritten to
+   `rolesOrEventOrganizer`, `rolesOrEscrowOwner`, `rolesOrTicketOwner(ByNumber)` and `rolesOrRefundRequestOwner(ByRequestId)`;
+   `ReactiveGuardExpressionLintTest` keeps the shape out. The owner of event B reads its promo codes and escrow.
+
+**Organizer isolation, proven live.** Organizer A (Tenant Alpha Events) ran 22 operations against organizer B's real
+organization, bank account, promo code, published event, escrow and payouts: reads of the profile, bank accounts, promo codes,
+escrow, payout requests, sales and the holder audience; writes that create, activate, deactivate, delete and set default;
+`updateOrganization`; `messageTicketHolders`; `cancelEvent`; `unpublishEvent`. **No operation returned data or changed
+state, and every response was identical to the same call on an id that does not exist**, so there is no existence oracle.
+The positive control (B on their own data) succeeded on every one. One operation per kind had to be re-sent because my first
+probe was malformed and never reached the guard; the numbers above are from the well-formed run.
+
+**RabbitMQ replaces Azure Service Bus (D-62).** The transport, topology, consumer and tests are described in
+`docs/MESSAGING_RABBITMQ.md`; docker-resources no longer defines the emulator, its SQL Edge store or its topology file;
+`dev_rabbitmq_init` provisions the `ticketing` virtual host and user. Proven on a real broker in tests (routing by wire
+name, publish order on an ordered subscription, dead-lettering, an unconfirmed publish keeping the outbox row pending,
+Mongo-to-broker, booking's listener with Redis) and live (a published event reached booking through the broker and opened
+its escrow). **The cost, stated:** order is kept per subscription, not per aggregate (§2 of ET-PLT-003). The old emulator
+volume `dev_servicebus_mssql_data` was not deleted.
+
+**Observed, not changed.**
+- `uploadVerificationDocument` takes a URL, but `requestDocumentUploadUrl` returns a `fileKey`; passing the key fails
+  Mongo schema validation as an `INTERNAL` error whose log line names the real cause.
+- Approving an organization grants `ORGANIZER`, which a token minted before the approval does not carry; the organizer must
+  sign in again before `createEvent`.
+- The owner check on an event reads its escrow account, which exists only after publish, so an event's promo-code list is
+  refused to its own organizer while the event is a draft.
+- Platform roles are read from the identity user record, not the token (F-070). Staff imported straight into the realm have no
+  record; staff created through the workflow do.
+- `createPromoCode` derives the organization from `eventId`; an organizer-level code (no event) is refused.
+
+## F-072 · 2026-10-14 · Every gate is a permission; the catalogue is seeded and fingerprinted; the frontends ask the same question
+
+**Closes F-071 item 3 (role literals) and its open supergraph item.**
+
+1. *No role literal secures a service.* 293 gate sites across identity, catalog and booking now use a catalogue permission
+   (`@RequiresPermission`, `@RequiresTenantPermission` for a caller who must be the organization's member, or an
+   `ownerOr…`/`permissionOr…` bean for the owner-of-the-record case). `RoleLiteralBudgetLintTest` budgets are all 0.
+   56 permissions were added after `audit:view` (names follow `module:action`, verbs from the closed set); finance now holds
+   the read permissions of the finance modules (a deliberate widening, recorded in D-63), and `platform:configure`,
+   `payment:approve`, `staff:manage` stay with the super administrator.
+2. *Seeded and fingerprinted.* Identity writes the catalogue to `identity_permission_catalogue` on every start (one row per
+   code with scope, module, action, description and which platform, organization and event roles hold it, plus a `__meta`
+   row with a SHA-256 fingerprint of codes, scopes and platform-role grants). The rows are a read-only projection; the code is
+   the authority. Catalog, booking and the gateway report `permissionCatalogue` health by comparing their compiled
+   fingerprint with identity's (`/api/internal/authorization/catalogue-fingerprint`), read when health is asked for and kept
+   for a minute; a build that disagrees with identity shows `CATALOGUE_MISMATCH`.
+3. *A suspended organization freezes the grants it issued* (`PermissionDecider`): an event-access grant no longer allows what
+   the organization's status refuses; reads stay open.
+4. *Stale supergraph fails the build.* `compose-supergraph.sh --check` composes the subgraph SDL offline and exits 1 when the
+   committed `supergraph.graphql` differs; `SupergraphFreshnessTest` runs it (skipped without `rover` or the sibling repo).
+5. *An approved organizer is signed in with the new role without signing out.* `POST /api/auth/refresh` (same-origin, rate
+   limited) force-refreshes the BFF session once through the single-flight token manager; the onboarding status page calls it
+   once per organization the first time it sees the organization active.
+6. *Frontends.* `permission-codes.ts` is generated with `PLATFORM_ROLE_GRANTS` and `permissionsOfRoles`. The admin console's
+   navigation, tabs, action table, command palette, pending queues and roles matrix are keyed by permission; the organizer
+   console derives its capabilities from `myEffectivePermissions(organizationId)`, not from the role name.
+7. *Message ordering.* Per subscription, with a documented volume trigger and no poller (`docs/MESSAGING_RABBITMQ.md`).
+   The retired Service Bus volume `dev_servicebus_mssql_data` was removed.
+
+**Behaviour changes to know about.** The finance lead no longer sees the Health module (it needs `platform:view`, which
+finance does not hold); an administrator can no longer edit platform rules (`platform:configure` is the super administrator's);
+an administrator is now offered "Delete user" in the console, which matches what the service already allowed.
+
+**Live re-proof (2026-10-14, real Keycloak, router, services).** The catalogue is in Mongo (86 rows plus `__meta`) and catalog and
+booking report the same fingerprint as identity. Super admin sees all ten modules and the platform rules; finance sees Dashboard,
+Finance, Ledger, Transactions and Analytics and is refused `updatePlatformConfiguration` and `resetStaffTemporaryPassword`;
+admin sees every module and is refused the same two. A defect surfaced: the reconciliation run's `reconciliationDate` is a
+`LocalDate` and the `DateTime` scalar refused it, failing the whole `reconciliationRuns` page (and finance's dashboard card);
+the scalar now serializes a date as the start of its day in UTC, with a test. `POST /api/auth/refresh` answers 200 with the
+session's roles. **Not proved live:** the approved-organizer refresh end to end (needs a full organizer application).
+
+**Not done / open.** The organizer
+console's `hasOrganizerAccess` still names two platform roles because it asks whether the membership sync has completed, not
+what the person may do.
+
+## F-073 · 2026-10-15 · ET-IDN-001 closed: contacts and legal pages proved live; a lost-click defect on the code step; ET-PLT-013 closed
+
+**ET-PLT-013 is `implemented`** (F-072 listed what remained; the rest is now built): platform-role allows of state-changing
+permissions are audited by `RequiresPermissionAspect`, the shared `IdentityAuthorizationClient` with `check-many` is the one
+client (a lint keeps a second out), resolution p99 is 2.25 ms on a real MongoDB so no cache exists, the retired permission
+collections and the `RolePermissionsChanged` row are removed, A05/A09 cases and the read-only matrix Playwright spec are added.
+
+**ET-IDN-001 is `implemented`.** Proved live against the real identity, Keycloak, router and BFF with a brand-new buyer:
+email OTP sign-in; add a WhatsApp contact (code to the new contact) and see it listed masked and verified; remove it (code to the
+primary) and see it gone; removing the last verified contact refused (`LAST_VERIFIED_CONTACT`); `/terms` and `/privacy` served
+with the draft notice and linked from the sign-in page. 257 buyer Vitest tests, 40 + 22 buyer Playwright browser tests and the
+three-app brand suite pass.
+
+**Defect found by the Playwright run and fixed: a click on "Resend" or "Send by email instead" was lost.** The code form
+validated on blur, so moving focus off the empty code boxes inserted "Enter the 6-digit code", which pushed the buttons down
+between press and release. The code form now validates on submit. Three identify specs also asserted wording the screen no
+longer used (tries left in `identify-attempts`, "Try again at"); they now match it.
+
+**Behaviour to know about.** Confirming a contact removal ends the account's sessions (the spec requires it), so the person is
+signed out right after the success; the buyer app sends them to the sign-in page without saying why. Worth a line of copy.
+
+**Open, unrelated to these specs.** `apps/admin` Playwright "search opens from every module page" fails because `/analytics`
+crashes with "Invalid time value" on generated mock data; not diagnosed.
+
+## F-074 · 2026-10-15 · ET-CAT-004 built to its last row: pictures up to 20 MB go straight to the private bucket in two steps
+
+`requestMediaUpload` / `requestStockImageUpload` check the declared name, type and size and return a 15-minute grant (an
+address in the private bucket that accepts one `PUT` of exactly that size and type, the headers, a signed token);
+`completeMediaUpload` / `completeStockImageUpload` read the object, apply the bytes rules at the 20 MB ceiling and the exact
+size, and only then write the asset row. A file that fails is deleted before the refusal. Nothing is served until the row
+exists, and the bucket stays private, so a removal still takes effect at the origin.
+
+**Proved on real services.** `MediaLargeUploadTest` runs on a real MongoDB replica set and a real S3-compatible object store
+(LocalStack, presigned `PUT` with a plain HTTP client): 6 MB picture through and served from bytes; completion twice returns the
+same asset; a script declared as a PNG refused and removed; a wrong-size body never registered; completing before sending
+refused; over-20 MB, empty, SVG, PDF and blank-name declarations refused before a grant; a full library gets no grant; another
+organization's member or another user gets `MEDIA_UNKNOWN`; an altered, truncated, forged-key or expired token is one refusal;
+a stock image goes through the same steps and an organization's token cannot be completed as stock. The development disk
+store's `PUT /api/v1/media/upload-target` is tested for forged token, wrong type, wrong length and a key that tries to leave
+the store. Catalog is 596 tests green; organizer app Vitest is green including the 6 MB and 21 MB cases.
+
+**Decisions made here (not in the spec before).** The ceiling is 20 MB; the token is stateless (HMAC, no collection), so
+completion is idempotent by the object key; the signing key is required when `file-storage.type` is not `local`; the browser
+sends to the bucket directly, so the bucket needs a CORS rule allowing `PUT` from the organizer app's origin — **a deployment
+step, not done here**.
+
+**Status.** ET-CAT-004 stays `in-progress`: every gate row is ticked, but its blockers ET-CAT-001, 002 and 003 are still
+`approved` and the platform's own lint refuses an `implemented` spec ahead of its blockers.
+
+**Not done.** The organizer console's upload was not exercised in a browser against a real bucket; the S3 path is proved by
+the service tests and the client by Vitest.

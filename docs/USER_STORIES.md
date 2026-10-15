@@ -557,7 +557,7 @@ The organizer onboarding flow follows a **staged approval process** with progres
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │ STEP 7: Publish Event                                                │   │
 │  ├─────────────────────────────────────────────────────────────────────┤   │
-│  │ Publish OrganizerApprovedEvent to Azure Service Bus:                 │   │
+│  │ Publish OrganizerApprovedEvent to RabbitMQ:                 │   │
 │  │ {                                                                    │   │
 │  │   type: "OrganizerApprovedEvent",                                    │   │
 │  │   organizationId: organization.id,                           │   │

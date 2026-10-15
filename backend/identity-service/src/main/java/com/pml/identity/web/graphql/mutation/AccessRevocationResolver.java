@@ -1,6 +1,8 @@
 package com.pml.identity.web.graphql.mutation;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -33,7 +35,7 @@ public class AccessRevocationResolver {
     private final AccessRevocationService revocations;
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.SESSION_MANAGE)
     @FailClosedOnRevocation("admin.revokeToken")
     public Mono<RevocationRecordView> revokeToken(@InputArgument String jti, @InputArgument String reason) {
         return actor().flatMap(admin -> revocations.revokeManually(RevocationType.TOKEN, jti, reason, admin))
@@ -41,7 +43,7 @@ public class AccessRevocationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.SESSION_MANAGE)
     @FailClosedOnRevocation("admin.revokeSessionAccess")
     public Mono<RevocationRecordView> revokeSessionAccess(@InputArgument String sid,
                                                           @InputArgument String reason) {
@@ -50,7 +52,7 @@ public class AccessRevocationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.SESSION_MANAGE)
     @FailClosedOnRevocation("admin.revokeUserAccess")
     public Mono<RevocationRecordView> revokeUserAccess(@InputArgument String userId,
                                                        @InputArgument String reason) {
@@ -69,7 +71,7 @@ public class AccessRevocationResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.SESSION_MANAGE)
     public Mono<RevocationRecordOffsetPage> activeRevocations(@InputArgument RevocationType type,
                                                               @Valid @InputArgument OffsetPaginationInput pagination) {
         return revocations.active(type, pagination);

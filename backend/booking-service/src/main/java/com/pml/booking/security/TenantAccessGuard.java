@@ -2,6 +2,7 @@ package com.pml.booking.security;
 
 import com.pml.booking.infrastructure.client.IdentityServiceClient;
 import com.pml.shared.dto.authorization.AuthorizationRequest;
+import com.pml.shared.security.Permission;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -52,10 +53,10 @@ public class TenantAccessGuard {
     /**
      * @param userId         the actor, taken from the JWT and never from input
      * @param organizationId the tenant whose records are being reached for
-     * @param permission     e.g. {@code payout:request}, {@code escrow:read}
+     * @param permission     what the actor must hold in that organization, from the catalogue
      * @return the organizationId, so this composes into a reactive chain
      */
-    public Mono<String> requireAccess(String userId, String organizationId, String permission) {
+    public Mono<String> requireAccess(String userId, String organizationId, Permission permission) {
         if (userId == null || userId.isBlank()) {
             return Mono.error(new TenantAccessDeniedException("No authenticated actor"));
         }
@@ -70,12 +71,12 @@ public class TenantAccessGuard {
         return identityServiceClient.checkAuthorization(AuthorizationRequest.builder()
                         .userId(userId)
                         .organizationId(organizationId)
-                        .requiredPermission(permission)
+                        .requiredPermission(permission.code())
                         .build())
                 .flatMap(result -> {
                     if (!result.isAuthorized()) {
                         log.warn("Tenant access denied: actor={} organization={} permission={} reason={}",
-                                userId, organizationId, permission, result.getReason());
+                                userId, organizationId, permission.code(), result.getReason());
                         return Mono.error(new TenantAccessDeniedException(
                                 "Not permitted to act for this organization"));
                     }

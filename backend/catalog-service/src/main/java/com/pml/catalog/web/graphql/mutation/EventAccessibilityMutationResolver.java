@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.mutation;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.EventAccessibilityInput;
@@ -8,7 +10,6 @@ import com.pml.catalog.web.graphql.dto.EventMutationResponse;
 import com.pml.catalog.service.EventAccessibilityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
@@ -35,7 +36,7 @@ public class EventAccessibilityMutationResolver {
      * Update accessibility information for an event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<EventMutationResponse> updateEventAccessibility(
             @InputArgument String eventId,
             @Valid @InputArgument EventAccessibilityInput input

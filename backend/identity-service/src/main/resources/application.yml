@@ -13,7 +13,7 @@ spring:
       pool:
         size: ${SCHEDULER_POOL_SIZE:4}
   profiles:
-    # Defaults to "local" (Service Bus emulator). Prod sets SPRING_PROFILES_ACTIVE=prod.
+    # Defaults to "local" (the docker-resources dev stack). Prod sets SPRING_PROFILES_ACTIVE=prod.
     active: ${SPRING_PROFILES_ACTIVE:local}
   application:
     name: identity-service
@@ -45,34 +45,20 @@ spring:
       - task-queue: identity-notify
       - task-queue: identity-account
 
-  cloud:
-    azure:
-      servicebus:
-        connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:}
-        # No `namespace` key on purpose. An empty one is still "set": it overrides the connection string and sends the
-        # producer to ".servicebus.windows.net", where every send times out. Managed-identity deployments set
-        # SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE in the environment instead.
-        producer:
-          send-timeout: 30s
-    stream:
-      default-binder: servicebus
-      function:
-        definition: ""
-      bindings:
-        # The one binding identity publishes on, through the outbox drain.
-        identityEvents-out-0:
-          destination: identity-events
-      # The Azure binder needs the entity kind spelled out for a producer; without it every send
-      # fails with "Entity type cannot be null" and the outbox never drains.
-      servicebus:
-        bindings:
-          identityEvents-out-0:
-            producer:
-              entity-type: topic
-              # The binder sends asynchronously unless told otherwise: send() then returns true before the
-              # bus has accepted anything and a later failure is only logged, so the outbox would mark the
-              # event sent and lose it. Synchronous sends raise on failure, which keeps the row pending.
-              sync: true
+  # RabbitMQ carries the cross-service events (identity-events, catalog-events, booking-events).
+  # The broker, its virtual host and this service's credentials are provisioned by the environment;
+  # none has a default, so a missing value stops startup naming the property rather than starting a
+  # service whose outbox can never drain.
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: ${RABBITMQ_VHOST}
+    # A publish completes only when the broker has confirmed it. The outbox marks a row sent when the
+    # publish completes, so an unconfirmed publish that later failed would be a message the platform
+    # believed it delivered.
+    publisher-confirm-type: simple
 
   data:
     mongodb:
@@ -425,9 +411,9 @@ platform:
   # nothing reads them, which is the failure the outbox exists to prevent, reached another way.
   outbox:
     collection: identity_outbox
-    # The binding identity publishes on (spring.cloud.stream.bindings above). A name
-    # that is not declared there has no destination, and the drain's sends would never reach the topic.
-    binding: identityEvents-out-0
+    # The topic exchange identity publishes on. The platform's event topology declares it, with the
+    # queues bound to it, so the drain's sends reach every subscription that consumes the event.
+    exchange: identity-events
     # Two seconds: the drain is a poll, and this is how long a staged message waits before the bus
     # sees it. Short enough that nothing feels queued, long enough that an idle service is not
     # querying constantly.

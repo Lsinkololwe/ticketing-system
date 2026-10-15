@@ -134,4 +134,19 @@ describe('crash window', () => {
     expect(h.kc.stats.reuseDetected).toBe(1);
     expect(await deps.sessions.load(cookie)).toBeNull();
   });
+
+  it('forceRefresh exchanges the refresh token even while the access token is fresh, once for concurrent callers', async () => {
+    const { deps, cookie, h } = await signedIn();
+    const before = h.kc.stats.refreshCalls;
+    const results = await Promise.all(Array.from({ length: 10 }, () => deps.tokens.forceRefresh(cookie)));
+    expect(results.every((r) => r.ok)).toBe(true);
+    expect(h.kc.stats.refreshCalls).toBe(before + 1);
+    expect(h.kc.stats.reuseDetected).toBe(0);
+    expect((await deps.sessions.load(cookie))!.record.rtVer).toBe(1);
+  });
+
+  it('forceRefresh without a session reports NO_SESSION', async () => {
+    const { deps } = await signedIn();
+    expect(await deps.tokens.forceRefresh('not-a-session-cookie-value-at-all')).toEqual({ ok: false, reason: 'NO_SESSION' });
+  });
 });

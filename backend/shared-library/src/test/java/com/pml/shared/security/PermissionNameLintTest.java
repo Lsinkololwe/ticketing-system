@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * typo denies everyone, and an old name silently grants nothing.
  */
 @Tag("L1")
-@Tag("ET-ORG-003")
+@Tag("ET-PLT-013")
 @DisplayName("Permissions are named through the catalogue enum, never as strings")
 class PermissionNameLintTest {
 
@@ -66,6 +66,32 @@ class PermissionNameLintTest {
             Matcher literal = CODE_LITERAL.matcher(code(file));
             while (literal.find()) {
                 problems.add(BACKEND.relativize(file) + " spells " + literal.group() + "; use Permission." + constantFor(literal.group()));
+            }
+        }
+        assertThat(problems).isEmpty();
+    }
+
+    @Test
+    @DisplayName("No code outside the catalogue spells any module with a permission verb, catalogued or not")
+    void noModuleIsInventedByHand() throws IOException {
+        Assumptions.assumeTrue(Files.isDirectory(BACKEND.resolve("identity-service")), "backend sources not present");
+        // A literal that reads as module:verb under any module is either a catalogue code spelled by
+        // hand or a permission nobody declared, which identity answers with "unknown permission".
+        String verbs = java.util.stream.Stream.concat(
+                        java.util.Arrays.stream(Permission.Action.values()).map(Permission.Action::verb),
+                        java.util.stream.Stream.of("read", "update", "write", "list"))
+                .collect(java.util.stream.Collectors.joining("|"));
+        Pattern anyModule = Pattern.compile("\"([a-z][a-z_]+):(" + verbs + ")\"");
+        List<String> problems = new ArrayList<>();
+        for (Path file : sources()) {
+            if (file.toString().endsWith(CATALOGUE)) {
+                continue;
+            }
+            Matcher literal = anyModule.matcher(code(file));
+            while (literal.find()) {
+                problems.add(BACKEND.relativize(file) + " spells " + literal.group()
+                        + (Permission.fromCode(literal.group(1) + ":" + literal.group(2)).isPresent()
+                                ? "; use the catalogue constant" : ", which is not in the catalogue"));
             }
         }
         assertThat(problems).isEmpty();

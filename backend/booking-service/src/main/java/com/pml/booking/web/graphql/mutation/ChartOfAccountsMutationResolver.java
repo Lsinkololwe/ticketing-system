@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -8,7 +10,6 @@ import com.pml.booking.service.ChartOfAccountsService;
 import com.pml.booking.web.graphql.dto.CreateChartOfAccountsInput;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
@@ -47,7 +48,7 @@ public class ChartOfAccountsMutationResolver {
      * Schema: createChartOfAccountsEntry(input: CreateChartOfAccountsInput!): ChartOfAccountsMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHART_OF_ACCOUNTS_MANAGE)
     public Mono<ChartOfAccountsEntry> createChartOfAccountsEntry(
             @Valid @InputArgument CreateChartOfAccountsInput input
     ) {
@@ -69,7 +70,7 @@ public class ChartOfAccountsMutationResolver {
      * Schema: updateChartOfAccountsEntry(id: ID!, input: CreateChartOfAccountsInput!): ChartOfAccountsMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHART_OF_ACCOUNTS_MANAGE)
     public Mono<ChartOfAccountsEntry> updateChartOfAccountsEntry(
             @InputArgument String id,
             @Valid @InputArgument CreateChartOfAccountsInput input
@@ -90,7 +91,7 @@ public class ChartOfAccountsMutationResolver {
      * <p>Note: Accounts with posted journal entries cannot be deactivated.</p>
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHART_OF_ACCOUNTS_MANAGE)
     public Mono<ChartOfAccountsEntry> deactivateChartOfAccountsEntry(@InputArgument String id) {
         log.info("GraphQL mutation: deactivateChartOfAccountsEntry({})", id);
 
@@ -127,7 +128,7 @@ public class ChartOfAccountsMutationResolver {
      * </pre>
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHART_OF_ACCOUNTS_MANAGE)
     public Mono<Boolean> seedChartOfAccounts() {
         log.info("GraphQL mutation: seedChartOfAccounts");
 

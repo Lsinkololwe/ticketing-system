@@ -6,7 +6,7 @@
 
 **Version:** 3.1 (Two-Stage Commission Model)
 **Date:** March 2026
-**Stack:** Spring Boot 3.x, Spring WebFlux, Temporal (workflows and Schedules), a transactional outbox, MongoDB Replica Set, Azure Service Bus
+**Stack:** Spring Boot 3.x, Spring WebFlux, Temporal (workflows and Schedules), a transactional outbox, MongoDB Replica Set, RabbitMQ
 **Microservices:** Catalog Service, Booking Service, Identity Service
 
 ---
@@ -677,12 +677,12 @@ Your system needs these account types (based on USER_STORIES.md US-FIN-001, US-F
 │  │  ┌─────────────────────────────────────────────────────────────────────┐ │  │
 │  │  │ Processes: Temporal workflows and Schedules (ET-PLT-015)            │ │  │
 │  │  │ • Activities write MongoDB and stage outbox rows in one transaction │ │  │
-│  │  │ • Each service's *_outbox is drained to Service Bus after commit    │ │  │
+│  │  │ • Each service's *_outbox is drained to RabbitMQ after commit    │ │  │
 │  │  └─────────────────────────────────────────────────────────────────────┘ │  │
 │  │                                    │                                      │  │
 │  │                                    ▼                                      │  │
 │  │  ┌─────────────────────────────────────────────────────────────────────┐ │  │
-│  │  │ External Events: Azure Service Bus                                  │ │  │
+│  │  │ External Events: RabbitMQ                                  │ │  │
 │  │  │ • Cross-service communication                                       │ │  │
 │  │  │ • Topics: payment-events, ticket-events, user-events               │ │  │
 │  │  │ • Each service subscribes to relevant topics                        │ │  │
@@ -691,7 +691,7 @@ Your system needs these account types (based on USER_STORIES.md US-FIN-001, US-F
 │  └──────────────────────────────────────────────────────────────────────────┘  │
 │                                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐  │
-│  │                         AZURE SERVICE BUS                                 │  │
+│  │                         RABBITMQ                                 │  │
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐          │  │
 │  │  │ payment-events  │  │ ticket-events   │  │ user-events     │          │  │
 │  │  │ (Topic)         │  │ (Topic)         │  │ (Topic)         │          │  │
@@ -1074,7 +1074,7 @@ db.processed_events.createIndex({ "processedAt": 1 }, { expireAfterSeconds: 6048
 │                                    │                                            │
 │                                    ▼                                            │
 │  ┌─────────────────────────────────────────────────────────────────────────┐    │
-│  │ IDENTITY SERVICE (via Azure Service Bus)                               │    │
+│  │ IDENTITY SERVICE (via RabbitMQ)                               │    │
 │  │ 1. Send notification to ALL ticket holders                              │    │
 │  │    - SMS: "Event rescheduled to April 5"                                │    │
 │  │    - Email: Detailed info + refund option                               │    │
@@ -1111,7 +1111,7 @@ db.processed_events.createIndex({ "processedAt": 1 }, { expireAfterSeconds: 6048
 │                                    │                                            │
 │                                    ▼                                            │
 │  ┌─────────────────────────────────────────────────────────────────────────┐    │
-│  │ BOOKING SERVICE (via Azure Service Bus)                                 │    │
+│  │ BOOKING SERVICE (via RabbitMQ)                                 │    │
 │  │ 1. Find all tickets for this event (PURCHASED, VALIDATED)               │    │
 │  │ 2. FOR EACH ticket:                                                      │    │
 │  │    a) Mark ticket as REFUND_PENDING                                     │    │
@@ -2039,7 +2039,7 @@ public class ReconciliationService {
 ### Phase 1: Foundation (Week 1-2)
 - [ ] Set up MongoDB Replica Set (use existing docker/mongodb-replica-set/)
 - [ ] Add the transactional outbox and a Temporal worker to all 3 services
-- [ ] Configure Azure Service Bus
+- [ ] Configure RabbitMQ
 - [ ] Update Ticket.java with @Version, commissionStatus, commissionEarnedAt
 - [ ] Create PaymentIntent model with settlementStatus
 - [ ] Update EscrowAccount.java with per-event fields

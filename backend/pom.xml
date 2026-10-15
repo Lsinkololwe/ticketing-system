@@ -44,7 +44,7 @@
     </modules>
 
     <properties>
-        <!-- required by azure-core-http-netty 1.16.6 (Service Bus SDK pin, see dependencyManagement) -->
+        <!-- Netty is pinned once for the whole reactor: the imported BOMs lag the security fixes. -->
         <netty.version>4.1.137.Final</netty.version>
         <java.version>21</java.version>
         <maven.compiler.release>21</maven.compiler.release>
@@ -176,40 +176,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Service Bus SDK pinned above the Spring Cloud Azure BOM: 7.17.7 (the BOM's) does not understand the
-                 UseDevelopmentEmulator connection string and always dials <namespace>.servicebus.windows.net:5671,
-                 so nothing could reach the local emulator. 7.17.20 is the same API line. -->
-            <dependency>
-                <groupId>com.azure</groupId>
-                <artifactId>azure-messaging-servicebus</artifactId>
-                <version>7.17.20</version>
-            </dependency>
-            <dependency>
-                <groupId>com.azure</groupId>
-                <artifactId>azure-core-amqp</artifactId>
-                <version>2.12.1</version>
-            </dependency>
-            <dependency>
-                <groupId>com.azure</groupId>
-                <artifactId>azure-core</artifactId>
-                <version>1.59.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.azure</groupId>
-                <artifactId>azure-core-http-netty</artifactId>
-                <version>1.16.6</version>
-            </dependency>
-            <dependency>
-                <groupId>com.azure</groupId>
-                <artifactId>azure-json</artifactId>
-                <version>1.5.1</version>
-            </dependency>
-            <dependency>
-                <groupId>com.azure</groupId>
-                <artifactId>azure-xml</artifactId>
-                <version>1.2.1</version>
-            </dependency>
-
             <!--
                 ET-PLT-012 R7 · three artifacts the imported BOMs pin OLDER than Spring Boot
                 needs, pinned back up here.
@@ -320,7 +286,7 @@
                 <version>${java-dataloader.version}</version>
             </dependency>
 
-            <!-- Spring Cloud Azure — the Service Bus binder -->
+            <!-- Spring Cloud Azure — the Key Vault secrets starter (the message broker is RabbitMQ, D-62) -->
             <dependency>
                 <groupId>com.azure.spring</groupId>
                 <artifactId>spring-cloud-azure-dependencies</artifactId>
@@ -517,7 +483,7 @@
                                             the relational stack. Its JDBC event publication is the
                                             reason a relational store would come back: it needs a
                                             blocking driver, and this platform is reactive
-                                            end-to-end. Cross-service events go over Service Bus.
+                                            end-to-end. Cross-service events go over RabbitMQ.
                                         -->
                                         <exclude>org.springframework.modulith:*</exclude>
                                     </excludes>

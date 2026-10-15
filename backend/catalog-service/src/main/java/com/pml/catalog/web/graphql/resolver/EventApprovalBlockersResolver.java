@@ -1,11 +1,12 @@
 package com.pml.catalog.web.graphql.resolver;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.pml.catalog.domain.model.Event;
 import com.pml.catalog.service.EventReviewService;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -24,7 +25,7 @@ public class EventApprovalBlockersResolver {
     }
 
     @DgsData(parentType = "Event", field = "approvalBlockers")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_VIEW)
     public Mono<List<String>> approvalBlockers(DgsDataFetchingEnvironment env) {
         Event event = env.getSource();
         return reviews.approvalBlockers(event).map(blockers -> blockers.stream().map(Enum::name).toList());

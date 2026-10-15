@@ -73,9 +73,9 @@ health:
     identity: [MongoDB, Keycloak]
     gateway:  [ApolloRouter]
   optional:     # DEGRADED — the service still serves
-    catalog:  [Redis, ServiceBus]
-    booking:  [Redis, ServiceBus, PawaPay]
-    identity: [Redis, ServiceBus, WhatsApp, SMS, SMTP]
+    catalog:  [Redis, RabbitMQ]
+    booking:  [Redis, RabbitMQ, PawaPay]
+    identity: [Redis, RabbitMQ, WhatsApp, SMS, SMTP]
     gateway:  [Redis]
 
 correlation:

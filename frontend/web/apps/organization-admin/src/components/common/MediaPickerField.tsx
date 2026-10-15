@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useController } from 'react-hook-form';
 import { Button, Dialog, EmptyState } from '@pml.tickets/shared/components/m3';
-import { fileToBase64, MEDIA_MAX_BYTES, MEDIA_TYPES, useMediaActions, useMyMedia } from '@/lib/api/media';
+import { fileToBase64, MEDIA_LARGE_MAX_BYTES, MEDIA_MAX_BYTES, MEDIA_TYPES, useMediaActions, useMyMedia } from '@/lib/api/media';
 
 export interface MediaPickerFieldProps {
   name: string;
@@ -25,11 +25,13 @@ function PickerDialog({ current, onPick, onClose }: { current: string; onPick: (
     if (!f) return;
     setProblem(null);
     if (!MEDIA_TYPES.includes(f.type)) return setProblem('Only JPG, PNG or WEBP images can be uploaded.');
-    if (f.size > MEDIA_MAX_BYTES) return setProblem('That image is larger than 5 MB.');
+    if (f.size > MEDIA_LARGE_MAX_BYTES) return setProblem('That image is larger than 20 MB.');
     setBusy(true);
     try {
-      const res = await actions.upload({ fileName: f.name, contentType: f.type, contentBase64: await fileToBase64(f), title: null, altText: null, eventId: null });
-      const url = (res.data as { uploadMedia?: { url?: string | null } } | null | undefined)?.uploadMedia?.url;
+      // Up to 5 MB the picture travels in the request; above it goes straight to the store and is then registered.
+      const url = f.size > MEDIA_MAX_BYTES
+        ? (await actions.uploadLarge(f)).url
+        : ((await actions.upload({ fileName: f.name, contentType: f.type, contentBase64: await fileToBase64(f), title: null, altText: null, eventId: null })).data as { uploadMedia?: { url?: string | null } } | null | undefined)?.uploadMedia?.url;
       if (!url) throw new Error('The image was uploaded but no address came back.');
       onPick(url);
       onClose();
@@ -57,7 +59,7 @@ function PickerDialog({ current, onPick, onClose }: { current: string; onPick: (
       {problem ? <p role="alert">{problem}</p> : null}
       {media.error && media.items.length === 0 ? <p role="alert">Could not load your media library.</p> : null}
       {!media.loading && media.items.length === 0 && !media.error ? (
-        <EmptyState icon="image" title="Your media library is empty" description="Upload a JPG, PNG or WEBP image up to 5 MB." />
+        <EmptyState icon="image" title="Your media library is empty" description="Upload a JPG, PNG or WEBP image up to 20 MB." />
       ) : (
         <div className="oc-opt-grid" role="group" aria-label="Media library">
           {media.items.map((m) => (

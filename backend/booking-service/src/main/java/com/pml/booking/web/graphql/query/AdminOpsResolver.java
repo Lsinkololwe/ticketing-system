@@ -1,5 +1,7 @@
 package com.pml.booking.web.graphql.query;
 
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsData;
@@ -37,7 +39,6 @@ import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -73,7 +74,7 @@ public class AdminOpsResolver {
     // ---- lists ---------------------------------------------------------------------------------
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.COMMISSION_VIEW)
     public Mono<AdminFinanceReads.CommissionPage> commissionRecords(@Valid @InputArgument CommissionFilterInput filter,
                                                                     @Valid @InputArgument OffsetPaginationInput pagination) {
         return reads.commissions(filter == null ? null : new AdminFinanceReads.CommissionFilter(filter.status(), filter.eventId(),
@@ -81,7 +82,7 @@ public class AdminOpsResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.SETTLEMENT_VIEW)
     public Mono<AdminFinanceReads.SettlementPage> gatewaySettlements(@Valid @InputArgument GatewaySettlementFilterInput filter,
                                                                      @Valid @InputArgument OffsetPaginationInput pagination) {
         return reads.settlements(filter == null ? null
@@ -89,21 +90,21 @@ public class AdminOpsResolver {
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<PaymentAttemptOffsetPage> paymentAttemptSearch(@Valid @InputArgument PaymentAttemptFilterInput filter,
                                                                @Valid @InputArgument OffsetPaginationInput pagination) {
         return payments.search(filter, pagination).map(slice -> new PaymentAttemptOffsetPage(slice.data(), slice.pagination()));
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<PaymentAttemptOffsetPage> stuckTransactions(@InputArgument Integer minutes,
                                                             @Valid @InputArgument OffsetPaginationInput pagination) {
         return payments.stuck(minutes, pagination).map(slice -> new PaymentAttemptOffsetPage(slice.data(), slice.pagination()));
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PAYMENT_VIEW)
     public Mono<PaymentRiskService.Summary> paymentRiskSummary(@InputArgument Integer windowHours) {
         int window = windowHours == null ? 24 : Math.max(1, Math.min(windowHours, 24 * 30));
         return risk.summary(window);
@@ -112,7 +113,7 @@ public class AdminOpsResolver {
     // ---- payment recovery ----------------------------------------------------------------------
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TRANSACTION_RECOVER)
     public Mono<PaymentAttempt> resumePaymentAttempt(@InputArgument String depositId) {
         return SecurityContextUtils.requireCurrentUserId().flatMap(actor -> payments.resume(depositId)
                 .doOnSuccess(attempt -> AdminAudit.record("PAYMENT_ATTEMPT_RESUMED", actor, "PAYMENT_ATTEMPT", depositId,
@@ -120,7 +121,7 @@ public class AdminOpsResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TRANSACTION_RECOVER)
     public Mono<List<PaymentOperations.Outcome>> retryPaymentAttempts(@InputArgument List<String> depositIds) {
         return SecurityContextUtils.requireCurrentUserId().flatMap(actor -> payments.retryMany(depositIds)
                 .doOnSuccess(outcomes -> AdminAudit.record("PAYMENT_ATTEMPTS_RETRIED", actor, "PAYMENT_ATTEMPT",
@@ -132,7 +133,7 @@ public class AdminOpsResolver {
      * super administrator must confirm it. Nothing is completed on the strength of this call.
      */
     @DgsMutation
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @RequiresPermission(Permission.PAYMENT_APPROVE)
     public Mono<RecoveryProposal> forceCompletePaymentAttempts(@InputArgument List<String> depositIds, @InputArgument String reason) {
         return dualControl.propose(RecoveryAction.FORCE_COMPLETE_PAYMENT_ATTEMPTS, depositIds, null, Map.of(), reason)
                 .doOnSuccess(proposal -> audit("RECOVERY_PROPOSED", proposal));
@@ -141,38 +142,38 @@ public class AdminOpsResolver {
     // ---- two-person actions --------------------------------------------------------------------
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TRANSACTION_RECOVER)
     public Flux<RecoveryProposal> dualControlQueue() {
         return dualControl.queue();
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TRANSACTION_RECOVER)
     public Flux<RecoveryProposal> myRecoveryProposals() {
         return dualControl.mine();
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TRANSACTION_RECOVER)
     public Flux<RecoveryProposal> pendingRecoveryProposals() {
         return dualControl.pending();
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TRANSACTION_RECOVER)
     public Mono<RecoveryProposal> proposeRecoveryAction(@Valid @InputArgument ProposeRecoveryActionInput input) {
         return dualControl.propose(input.action(), input.subjectIds(), input.amount(), input.parameters(), input.reason())
                 .doOnSuccess(proposal -> audit("RECOVERY_PROPOSED", proposal));
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TRANSACTION_RECOVER)
     public Mono<RecoveryProposal> confirmRecoveryAction(@InputArgument String proposalId, @InputArgument String reason) {
         return dualControl.confirm(proposalId, reason).doOnSuccess(proposal -> audit("RECOVERY_CONFIRMED", proposal));
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.TRANSACTION_RECOVER)
     public Mono<RecoveryProposal> withdrawRecoveryProposal(@InputArgument String proposalId) {
         return dualControl.withdraw(proposalId).doOnSuccess(proposal -> audit("RECOVERY_WITHDRAWN", proposal));
     }
@@ -187,7 +188,7 @@ public class AdminOpsResolver {
      * key stays beneath it as the last line.
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.PLATFORM_ACCOUNT_TRANSFER)
     public Mono<PlatformTransferResult> transferBetweenPlatformAccounts(@Valid @InputArgument PlatformTransferInput input) {
         var malformed = PlatformTransferService.check(input.fromAccount(), input.toAccount(), input.amount(), input.reason());
         if (malformed != null) {
@@ -214,7 +215,7 @@ public class AdminOpsResolver {
     // ---- chargebacks ---------------------------------------------------------------------------
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.CHARGEBACK_RECOVER)
     public Mono<ChargebackRecord> updateChargebackRecovery(@InputArgument String id, @Valid @InputArgument UpdateChargebackRecoveryInput input) {
         return SecurityContextUtils.requireCurrentUserId().flatMap(actor -> chargebackRecovery.apply(id, input.action(),
                         input.amount(), input.fundSource(), input.reference(), actor)

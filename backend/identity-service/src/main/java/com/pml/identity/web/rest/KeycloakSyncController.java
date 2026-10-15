@@ -111,6 +111,7 @@ public class KeycloakSyncController {
      */
     private Mono<ResponseEntity<SyncResponse>> revokeOtherSessions(KeycloakEventDto event) {
         return accessRevocation.cutOtherSessions(event.getUserId(), event.getSid(),
+                        event.getTimestamp() == null ? null : java.time.Instant.ofEpochMilli(event.getTimestamp()),
                         com.pml.identity.security.revocation.RevocationTrigger.CREDENTIAL_CHANGE)
                 .map(ended -> ResponseEntity.status(HttpStatus.ACCEPTED)
                         .body(SyncResponse.success(event.getUserId(), "REVOKED", "Other sessions revoked")))

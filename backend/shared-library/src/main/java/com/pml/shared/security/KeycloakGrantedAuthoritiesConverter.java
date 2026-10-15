@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
  */
 public class KeycloakGrantedAuthoritiesConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
 
-    private static final String ROLE_PREFIX = "ROLE_";
+    private static final String ROLE_PREFIX = Authorities.ROLE_PREFIX;
     private static final String SCOPE_PREFIX = "SCOPE_";
 
     // Keycloak default roles to skip

@@ -293,7 +293,7 @@ ordered by blast radius, not by wave, and it precedes every capability slice bel
 ### New · ET-PLT-003's only ordering proof is environment-gated and did not run
 
 `catalog.event.SessionOrderingTest` reports **0 tests in 6.083 s**. It is not a facade — it
-skips deliberately, via `Assumptions`, when the Azure Service Bus emulator in the sibling
+skips deliberately, via `Assumptions`, when the (retired, D-62) Azure Service Bus emulator in the sibling
 `docker-resources` repository is unreachable, and its javadoc explains why a socket probe would
 be worse. But the effect is that ET-PLT-003-R7 — *ordered per entity, and not beyond it* — is
 asserted by nothing in a normal run, while the suite reports green. ET-PLT-003's gate row for

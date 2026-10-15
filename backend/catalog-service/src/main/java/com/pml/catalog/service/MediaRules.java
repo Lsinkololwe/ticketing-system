@@ -20,6 +20,9 @@ public final class MediaRules {
     /** The largest picture accepted: 5 MB. */
     public static final int MAX_BYTES = 5 * 1024 * 1024;
 
+    /** The largest picture accepted through the two-step upload, which never passes through GraphQL or multipart. */
+    public static final int MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
     /** The base64 text of {@link #MAX_BYTES}, plus padding, which bounds what is decoded. */
     public static final int MAX_BASE64_CHARS = (MAX_BYTES / 3 + 1) * 4;
 
@@ -75,6 +78,13 @@ public final class MediaRules {
 
     /** Every reason {@code bytes} cannot be stored as {@code fileName} of {@code contentType}. */
     public static List<FieldViolation> check(String fileName, String contentType, byte[] bytes, String base64Path) {
+        return check(fileName, contentType, bytes, base64Path, MAX_BYTES);
+    }
+
+    /** The same checks with a different size ceiling, for the two-step upload. */
+    public static List<FieldViolation> check(String fileName, String contentType, byte[] bytes, String base64Path,
+                                             int maxBytes) {
+        String limit = (maxBytes / (1024 * 1024)) + " MB";
         List<FieldViolation> violations = new ArrayList<>();
         if (fileName == null || fileName.isBlank() || fileName.length() > 255) {
             violations.add(new FieldViolation("input.fileName", "must be 1 to 255 characters"));
@@ -83,11 +93,11 @@ public final class MediaRules {
             violations.add(new FieldViolation("input.contentType", "must be image/jpeg, image/png or image/webp"));
         }
         if (bytes == null) {
-            violations.add(new FieldViolation(base64Path, "must be base64 of at most 5 MB"));
+            violations.add(new FieldViolation(base64Path, "must be base64 of at most " + limit));
             return violations;
         }
-        if (bytes.length == 0 || bytes.length > MAX_BYTES) {
-            violations.add(new FieldViolation(base64Path, "must be between 1 byte and 5 MB"));
+        if (bytes.length == 0 || bytes.length > maxBytes) {
+            violations.add(new FieldViolation(base64Path, "must be between 1 byte and " + limit));
             return violations;
         }
         Optional<String> actual = sniff(bytes);
@@ -95,6 +105,22 @@ public final class MediaRules {
             violations.add(new FieldViolation(base64Path, "is not a JPEG, PNG or WebP image"));
         } else if (accepts(contentType) && !actual.get().equals(contentType.toLowerCase(Locale.ROOT))) {
             violations.add(new FieldViolation("input.contentType", "says " + contentType + " but the bytes are " + actual.get()));
+        }
+        return violations;
+    }
+
+    /** What an upload request declares, checked before a grant is issued. */
+    public static List<FieldViolation> checkDeclaration(String fileName, String contentType, long sizeBytes) {
+        List<FieldViolation> violations = new ArrayList<>();
+        if (fileName == null || fileName.isBlank() || fileName.length() > 255) {
+            violations.add(new FieldViolation("input.fileName", "must be 1 to 255 characters"));
+        }
+        if (!accepts(contentType)) {
+            violations.add(new FieldViolation("input.contentType", "must be image/jpeg, image/png or image/webp"));
+        }
+        if (sizeBytes < 1 || sizeBytes > MAX_UPLOAD_BYTES) {
+            violations.add(new FieldViolation("input.sizeBytes",
+                    "must be between 1 byte and " + (MAX_UPLOAD_BYTES / (1024 * 1024)) + " MB"));
         }
         return violations;
     }

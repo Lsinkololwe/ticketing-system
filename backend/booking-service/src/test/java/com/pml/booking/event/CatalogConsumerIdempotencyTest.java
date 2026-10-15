@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>That is not a small gap. The bus is at-least-once, so redelivery is normal traffic. A
  * redelivered `EventPublished` re-ran `createEscrowAccount`; the unique index on
  * `escrow_accounts.eventId` refused the second write; the exception was logged and the message not
- * acknowledged; Service Bus redelivered; it failed identically; and after `maxDeliveryCount` it
+ * acknowledged; the broker redelivered; it failed identically; and after the delivery limit it
  * dead-lettered. <b>The bus behaving exactly as documented produced a dead letter.</b></p>
  *
  * <h2>Both properties</h2>

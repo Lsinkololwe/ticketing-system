@@ -105,15 +105,15 @@ public class SecurityConfig {
                         // GraphiQL UI - development only
                         .pathMatchers("/graphiql/**").permitAll()
                         // Buyer-identity API (challenges, proofs, handles): POST needs internal-write, GET internal-read.
-                        .pathMatchers(org.springframework.http.HttpMethod.GET, "/api/internal/auth/**").hasAuthority("SCOPE_internal-read")
-                        .pathMatchers(org.springframework.http.HttpMethod.POST, "/api/internal/auth/**").hasAuthority("SCOPE_internal-write")
+                        .pathMatchers(org.springframework.http.HttpMethod.GET, "/api/internal/auth/**").hasAuthority(com.pml.shared.security.Authorities.SCOPE_INTERNAL_READ)
+                        .pathMatchers(org.springframework.http.HttpMethod.POST, "/api/internal/auth/**").hasAuthority(com.pml.shared.security.Authorities.SCOPE_INTERNAL_WRITE)
                         .pathMatchers("/api/internal/auth/**").denyAll()
                         // Internal service-to-service calls, read and write split by method so a
                         // read-scoped caller cannot reach the same prefix with a different verb.
                         .pathMatchers(org.springframework.http.HttpMethod.GET, "/api/internal/**")
-                            .hasAnyAuthority("SCOPE_internal-read", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM")
+                            .hasAnyAuthority(com.pml.shared.security.Authorities.INTERNAL_READ)
                         .pathMatchers("/api/internal/**")
-                            .hasAnyAuthority("SCOPE_internal-write", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM")
+                            .hasAnyAuthority(com.pml.shared.security.Authorities.INTERNAL_WRITE)
                         // GraphQL - require authentication so JWT is parsed and available to resolvers
                         // Fine-grained access control is handled at resolver level with @PreAuthorize
                         // The one exception: a tokenless POST whose every top-level field is on

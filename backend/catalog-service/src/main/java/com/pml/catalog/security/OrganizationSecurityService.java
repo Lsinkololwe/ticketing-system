@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
  * <h2>Usage in @PreAuthorize</h2>
  * <pre>
  * // Check if user is the organizer OR belongs to the same organization
- * &#64;PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN', #organizerId)")
+ * &#64;PreAuthorize("@organizationSecurityService.permissionOrTeamMember(authentication, 'ADMIN', #organizerId)")
  * public Flux&lt;Event&gt; eventsByOrganizer(@InputArgument String organizerId)
  * </pre>
  *
@@ -106,27 +106,17 @@ public class OrganizationSecurityService {
 
 
     /**
-     * One expression for "holds one of these roles, or is the organizer or on their team".
+     * One expression for "holds this permission on the platform, or is the organizer or on their team".
      *
      * <p>A {@code @PreAuthorize} expression that joins a role test to a bean call with {@code or}
      * cannot be used when the check returns a {@code Mono}: the {@code or} yields a Mono that is not unwrapped, and the call
      * fails with a ConverterNotFoundException (MonoJust to Boolean). A single reactive expression can.</p>
      */
-    public Mono<Boolean> rolesOrTeamMember(Authentication authentication, String rolesCsv, String organizerId) {
-        if (holdsAnyRole(authentication, rolesCsv)) {
+    public Mono<Boolean> permissionOrTeamMember(Authentication authentication, String permissionCode, String organizerId) {
+        if (com.pml.shared.security.PermissionGuards.holdsPermission(authentication, permissionCode)) {
             return Mono.just(true);
         }
         return isOrganizerOrTeamMember(organizerId, authentication);
     }
 
-    private static boolean holdsAnyRole(Authentication authentication, String rolesCsv) {
-        if (authentication == null || authentication.getAuthorities() == null) {
-            return false;
-        }
-        java.util.Set<String> wanted = new java.util.HashSet<>();
-        for (String role : rolesCsv.split(",")) {
-            wanted.add("ROLE_" + role.trim());
-        }
-        return authentication.getAuthorities().stream().anyMatch(a -> wanted.contains(a.getAuthority()));
-    }
 }

@@ -63,9 +63,9 @@ public record ServiceSecurity(String issuerUri,
                     // verb. ROLE_INTERNAL_SERVICE and ROLE_SYSTEM bypass the split for the few
                     // callers that are trusted for both.
                     exchanges.pathMatchers(HttpMethod.GET, "/api/internal/**")
-                            .hasAnyAuthority("SCOPE_internal-read", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM");
+                            .hasAnyAuthority(Authorities.INTERNAL_READ);
                     exchanges.pathMatchers("/api/internal/**")
-                            .hasAnyAuthority("SCOPE_internal-write", "ROLE_INTERNAL_SERVICE", "ROLE_SYSTEM");
+                            .hasAnyAuthority(Authorities.INTERNAL_WRITE);
                     // A tokenless POST that PublicGraphQlFilter judged a public operation (only a service that
                     // declares a PublicOperationPolicy ever has one marked); everything else needs a token.
                     exchanges.matchers(com.pml.shared.security.publicop.PublicGraphQlFilter.isPublicOperation()).permitAll();

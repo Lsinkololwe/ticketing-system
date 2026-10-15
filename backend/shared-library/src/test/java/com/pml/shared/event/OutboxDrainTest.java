@@ -91,7 +91,7 @@ class OutboxDrainTest {
     private OutboxDrain drainThat(java.util.function.Function<EventEnvelope, Mono<Void>> sink) {
         // EventBridge is final in its collaborator role here, so the drain is built against a
         // subclass that overrides publish. What is under test is the drain's own logic —
-        // reclaim, batch, error handling — not Service Bus's client.
+        // reclaim, batch, error handling — not the broker's client.
         return new OutboxDrain(outbox, new EventBridge(null, "unused") {
             @Override
             public Mono<Void> publish(EventEnvelope envelope) {

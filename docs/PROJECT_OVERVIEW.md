@@ -30,7 +30,7 @@ Apollo Router (:4000)                               ← GraphQL Federation 2 sup
         └── Identity Service (:8083) — Users, Organizers/Organizations, Roles, OTP
 ```
 
-Supporting infrastructure: **Keycloak** (:8084) for OAuth2/OIDC, **MongoDB** (reactive, business data), **PostgreSQL** (Keycloak, and the self-hosted Temporal service outside development), **Temporal** (:7233, durable workflows and Schedules), **Redis** (sessions, OTP, rate limits), and **Azure Service Bus** (cross-service events).
+Supporting infrastructure: **Keycloak** (:8084) for OAuth2/OIDC, **MongoDB** (reactive, business data), **PostgreSQL** (Keycloak, and the self-hosted Temporal service outside development), **Temporal** (:7233, durable workflows and Schedules), **Redis** (sessions, OTP, rate limits), and **RabbitMQ** (cross-service events).
 
 ## Technology Stack
 
@@ -39,7 +39,7 @@ Supporting infrastructure: **Keycloak** (:8084) for OAuth2/OIDC, **MongoDB** (re
 | Backend runtime | Java 21, Spring Boot 3.5.x, Spring WebFlux (fully reactive) |
 | GraphQL | Netflix DGS 10 with Federation 2, composed by Apollo Router |
 | Data | Spring Data MongoDB Reactive, with a transactional outbox per service; no service connects to PostgreSQL |
-| Events and processes | Transactional outbox in MongoDB, drained to Azure Service Bus for cross-service facts; Temporal workflows and Schedules for every multi-step, timed or cross-service process |
+| Events and processes | Transactional outbox in MongoDB, drained to RabbitMQ for cross-service facts; Temporal workflows and Schedules for every multi-step, timed or cross-service process |
 | Auth | Keycloak 26 with a custom Phone OTP authenticator (WhatsApp/SMS passwordless login); Better Auth on the frontend |
 | Admin & Customer web | Next.js 16, React 19, Apollo Client 4, Nx monorepo |
 | Mobile | Expo 54 / React Native, Apollo Client 4 |
@@ -74,7 +74,7 @@ ticketing-system/
 
 1. **Reactive end to end** — business data and each service's outbox live in reactive MongoDB; no service holds a blocking relational connection. The build refuses Spring Modulith, JDBC and the PostgreSQL driver (ET-PLT-012 R7).
 
-2. **Outbox plus workflows** — a fact for other services is staged in the service's `*_outbox` collection inside the business transaction and drained to Service Bus topics (`catalog-events`, `booking-events`, `identity-events`); a process within a service runs as a Temporal workflow (ET-PLT-015).
+2. **Outbox plus workflows** — a fact for other services is staged in the service's `*_outbox` collection inside the business transaction and drained to RabbitMQ topics (`catalog-events`, `booking-events`, `identity-events`); a process within a service runs as a Temporal workflow (ET-PLT-015).
 
 3. **GraphQL Federation 2** — each service owns its types (`@key`) and extends types owned by others; Apollo Router composes the supergraph. Schema workflow is strict: **backend schema → supergraph composition/GraphOS publish → frontend codegen**. Frontend TypeScript types are never hand-written for GraphQL.
 

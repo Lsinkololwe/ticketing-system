@@ -1,6 +1,8 @@
 package com.pml.identity.web.graphql.mutation;
 
 import jakarta.validation.Valid;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import org.springframework.validation.annotation.Validated;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
@@ -12,7 +14,6 @@ import com.pml.identity.web.graphql.dto.platform.BroadcastInput;
 import com.pml.shared.security.SecurityContextUtils;
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 /** Acknowledging alerts and publishing announcements; administrators only, audited. */
@@ -24,7 +25,7 @@ public class PlatformOpsMutationResolver {
     private final PlatformOpsService ops;
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_MANAGE)
     @FailClosedOnRevocation("admin.acknowledgeAlert")
     public Mono<SystemAlert> acknowledgeAlert(@InputArgument String id) {
         return actor().flatMap(adminId -> ops.acknowledge(id, adminId));
@@ -32,7 +33,7 @@ public class PlatformOpsMutationResolver {
 
     /** Publishes an announcement now, or schedules it with a future {@code startsAt}. */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_MANAGE)
     @FailClosedOnRevocation("admin.broadcastNotification")
     public Mono<SystemAnnouncement> broadcastNotification(@Valid @InputArgument BroadcastInput input) {
         return actor().flatMap(adminId -> ops.broadcast(input.title(), input.message(), input.segment(),
@@ -40,7 +41,7 @@ public class PlatformOpsMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_MANAGE)
     @FailClosedOnRevocation("admin.cancelAnnouncement")
     public Mono<SystemAnnouncement> cancelAnnouncement(@InputArgument String id) {
         return actor().flatMap(adminId -> ops.cancel(id, adminId));

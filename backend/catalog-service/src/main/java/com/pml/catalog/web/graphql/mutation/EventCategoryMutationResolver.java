@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.mutation;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.CategoryMutationResponse;
@@ -10,7 +12,6 @@ import com.pml.catalog.domain.model.EventCategory;
 import com.pml.catalog.service.EventCategoryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import jakarta.validation.Valid;
@@ -36,7 +37,7 @@ public class EventCategoryMutationResolver {
     private final java.time.Clock clock;
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATEGORY_MANAGE)
     public Mono<EventCategory> createEventCategory(
             @Valid @InputArgument CreateEventCategoryInput input
     ) {
@@ -48,7 +49,7 @@ public class EventCategoryMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATEGORY_MANAGE)
     public Mono<EventCategory> updateEventCategory(
             @InputArgument String id,
             @Valid @InputArgument UpdateEventCategoryInput input
@@ -63,7 +64,7 @@ public class EventCategoryMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATEGORY_MANAGE)
     public Mono<String> deleteEventCategory(
             @InputArgument String id
     ) {
@@ -74,7 +75,7 @@ public class EventCategoryMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATEGORY_MANAGE)
     public Mono<CategoryMutationResponse> activateEventCategory(
             @InputArgument String id
     ) {
@@ -92,7 +93,7 @@ public class EventCategoryMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CATEGORY_MANAGE)
     public Mono<CategoryMutationResponse> deactivateEventCategory(
             @InputArgument String id
     ) {

@@ -166,6 +166,12 @@ public class FakeKeycloak implements KeycloakAccountPort, KeycloakUserAdminPort 
                         List.of("web")));
     }
 
+    /** Opens a live session that started at {@code startedAt}. */
+    public void openSession(String keycloakUserId, String sessionId, java.time.Instant startedAt) {
+        liveSessions.computeIfAbsent(keycloakUserId, id -> new CopyOnWriteArrayList<>())
+                .add(new SessionView(sessionId, "10.0.0.1", startedAt, startedAt, List.of("web")));
+    }
+
     @Override
     public Mono<Void> grantRealmRole(String realm, String keycloakUserId, String roleName) {
         realmsUsed.add(String.valueOf(realm));

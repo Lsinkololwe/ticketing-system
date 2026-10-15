@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.pml.shared.constants.PlatformTime;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
@@ -16,7 +18,6 @@ import com.pml.booking.web.graphql.dto.ReconciliationRunOffsetPage;
 import com.pml.booking.web.graphql.dto.ReconciliationSummary;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -63,7 +64,7 @@ public class ReconciliationQueryResolver {
      * Schema: reconciliationRun(id: ID!): ReconciliationRun
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_VIEW)
     public Mono<ReconciliationRun> reconciliationRun(@InputArgument String id) {
         log.debug("GraphQL query: reconciliationRun(id={})", id);
         Objects.requireNonNull(id, "Reconciliation run ID is required");
@@ -79,7 +80,7 @@ public class ReconciliationQueryResolver {
      * Schema: reconciliationRunsRequiringReview: [ReconciliationRun!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_VIEW)
     public Mono<List<ReconciliationRun>> reconciliationRunsRequiringReview() {
         log.debug("GraphQL query: reconciliationRunsRequiringReview");
         return reconciliationService.findRequiringReview().collectList();
@@ -94,7 +95,7 @@ public class ReconciliationQueryResolver {
      * Schema: reconciliationRuns(filter: ReconciliationFilterInput, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_VIEW)
     public Mono<ReconciliationRunOffsetPage> reconciliationRuns(
             @InputArgument ReconciliationFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
@@ -111,7 +112,7 @@ public class ReconciliationQueryResolver {
      * Schema: reconciliationRunsByType(type: ReconciliationType!, pagination: OffsetPaginationInput): ReconciliationRunOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_VIEW)
     public Mono<ReconciliationRunOffsetPage> reconciliationRunsByType(
             @InputArgument ReconciliationType type,
             @InputArgument OffsetPaginationInput pagination
@@ -133,7 +134,7 @@ public class ReconciliationQueryResolver {
      * Schema: reconciliationSummary(type: ReconciliationType, startDate: DateTime, endDate: DateTime): ReconciliationSummary!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_VIEW)
     public Mono<ReconciliationSummary> reconciliationSummary(
             @InputArgument ReconciliationType type,
             @InputArgument Instant startDate,
@@ -177,7 +178,7 @@ public class ReconciliationQueryResolver {
      * Schema: escrowJournalVerification(eventId: ID!): EscrowJournalVerificationResponse!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_VIEW)
     public Mono<EscrowJournalVerificationResponse> escrowJournalVerification(
             @InputArgument String eventId
     ) {
@@ -202,7 +203,7 @@ public class ReconciliationQueryResolver {
      * Schema: escrowJournalVerificationAll: [EscrowJournalVerificationResponse!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_VIEW)
     public Mono<List<EscrowJournalVerificationResponse>> escrowJournalVerificationAll() {
         log.debug("GraphQL query: escrowJournalVerificationAll");
 
@@ -232,7 +233,7 @@ public class ReconciliationQueryResolver {
      * Schema: escrowJournalInconsistencies: [EscrowJournalVerificationResponse!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_VIEW)
     public Mono<List<EscrowJournalVerificationResponse>> escrowJournalInconsistencies() {
         log.debug("GraphQL query: escrowJournalInconsistencies");
 

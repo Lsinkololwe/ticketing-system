@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A consumer handles each {@code eventId} once, whatever the bus does.
  *
  * <h2>What at-least-once actually costs</h2>
- * Azure Service Bus redelivers by design: a consumer that crashes after doing the work but
+ * The broker redelivers by design: a consumer that crashes after doing the work but
  * before acknowledging will see the same message again. Without a guard,
  * {@code PaymentCompleted} issues a second ticket — and nothing downstream can tell it from a
  * legitimate second purchase, so the duplicate is permanent.

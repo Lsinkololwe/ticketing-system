@@ -72,13 +72,10 @@ class EventNameClosureTest {
     /**
      * Two published names the closed event registry does not carry.
      *
-     * <p>The registry is meant to be the complete list of cross-service messages. These two are
-     * each a real cross-service message all the same:</p>
+     * <p>The registry is meant to be the complete list of cross-service messages. This one is
+     * a real cross-service message all the same:</p>
      *
      * <ul>
-     *   <li>{@code identity.RolePermissionsChanged} — invalidates the permission cache. The
-     *       registry carries {@code MemberRoleChanged} for the same purpose at member granularity,
-     *       so this is the role-level sibling.</li>
      *   <li>{@code catalog.ReferenceDataChanged} — invalidates cached reference data.</li>
      * </ul>
      *
@@ -88,7 +85,6 @@ class EventNameClosureTest {
      * fails here immediately, which is the property worth keeping while the two are settled.</p>
      */
     private static final Set<String> KNOWN_OUTSIDE_THE_REGISTRY = Set.of(
-            "identity.RolePermissionsChanged",
             "catalog.ReferenceDataChanged");
 
     @Test

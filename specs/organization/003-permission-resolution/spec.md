@@ -32,36 +32,43 @@ rule.
 **One implementation, in identity-service, consulted over the internal API.** Booking and
 catalog do not resolve permissions; they ask. The alternative — a shared library each
 service embeds — looks cheaper and produces three versions in production the day one
-service deploys and the others do not. The call is `POST /api/internal/permissions/resolve`,
-scope-gated, and it returns a decision, not the inputs to one.
+service deploys and the others do not. The calls are `/api/internal/authorization/*`
+(`check`, `event-access`, `check-same-organization`, `user-organizations`, `organization-name`),
+scope-gated, and they return a decision, not the inputs to one.
 
 **Six steps, in this order, and the order is the specification.**
 
 ```
 1  platform role      SUPER_ADMIN / ADMIN / FINANCE grants → ALLOW
 2  event access grant if one exists and is ACTIVE:
-                        2a  in deniedPermissions          → DENY
-                        2b  in customPermissions          → ALLOW
-                        2c  in the event role's set       → ALLOW
-                        2d  otherwise                     → DENY   (an override is exhaustive)
+                        2a  in customPermissions          → ALLOW
+                        2b  in the event role's set       → ALLOW
+                        2c  otherwise                     → DENY   (an override is exhaustive)
 3  organization membership — absent or not ACTIVE         → DENY
 4     in deniedPermissions                                → DENY
 5     in customPermissions or the org role's set          → ALLOW
 6  otherwise                                              → DENY
 ```
 
-**Step 2d is the decision that makes a grant an override.** When an event access grant
+**Step 2c is the decision that makes a grant an override.** When an event access grant
 exists, resolution ends there — it does not fall through to the organization role. That is
 what allows a grant to *reduce* access: giving an organization `ADMIN` a `VIEWER` grant on
 one event restricts them on that event, which is impossible if a grant can only add. The
 cost is that a grant must be complete for that event, and the acceptance criteria say so
 explicitly, because the natural mistake is to grant `ticket:scan` to a manager and
-accidentally remove their ability to edit.
+accidentally remove their ability to edit. **A grant carries no deny list of its own** (ROADMAP
+D-56): it restricts by being exhaustive, and an organization-wide denial on the member does not
+apply on an event where an active grant exists — the grant is the whole answer for that event.
 
 **A platform role short-circuits, and taking that path is audited.** An `ADMIN` reading
 across tenants is a legitimate and necessary capability, and it is also the capability most
 worth logging. Step 1 writes an audit row naming the actor, the permission and the
 resource ([ET-PLT-009](../../_platform/009-audit-trail/)).
+
+**Platform roles bypass the organization status gate** (ROADMAP D-57). Support and finance must be
+able to act for a suspended organization, so a platform role is not refused for the organization's
+status; every such allow is audited through `PlatformWideAccess`. Organizers and members remain
+subject to the gate and are refused with `ORGANIZATION_STATUS`.
 
 **`FINANCE` is not a lesser `ADMIN`.** It grants the financial permission set across every
 organization and nothing else. A finance operator can approve a payout for any organization
@@ -69,18 +76,24 @@ and cannot suspend one, edit an event or read an attendee list. Modelling it as 
 below `ADMIN` would give it everything `ADMIN` has minus a subtraction list, and
 subtraction lists are where privilege leaks.
 
-**Deny always beats allow, at every level.** Step 2a beats 2b and 2c; step 4 beats step 5.
-An explicit denial is a statement somebody made deliberately, and the only safe reading of
-it is that they meant it.
+**A member's denial beats that member's allow.** Step 4 beats step 5. An explicit denial is a
+statement somebody made deliberately, and the only safe reading of it is that they meant it. The
+one place a denial does not reach is an event with an active grant (D-56): there the grant, being
+exhaustive, is the whole answer.
+
+**Only a permission the actor holds may be granted or denied** (ROADMAP D-58, `requireDelegable`).
+A denial is not exempt: whoever may not use a permission may not take it from someone else.
 
 **The permission vocabulary is closed and is a flat string catalogue.** `event:publish`,
 `payout:request`, `ticket:scan` — `{resource}:{action}`, declared in §4, enumerated in a
 Java enum. Not a hierarchy, not wildcards. `event:*` is convenient right up to the point
 somebody adds `event:delete` and discovers who already had it.
 
-**Resolution results are cached for seconds, not minutes, and invalidated by event.** The
-scanner at a gate asks hundreds of times an hour; the answer changes rarely. A 30-second
-Redis cache keyed on `(actor, permission, resource)` makes that affordable, and
+**Resolution results *may* be cached for seconds, not minutes, and invalidated by event — and the
+cache is deferred.** It is built only when a measured p99 resolution latency exceeds 20 ms (R7);
+none exists today. The design if it is needed: the scanner at a gate asks hundreds of times an hour
+and the answer changes rarely, so a 30-second Redis cache keyed on `(actor, permission, resource)`
+makes that affordable, and
 `identity.MemberRoleChanged`, `identity.MemberRemoved`, `identity.EventAccessGranted` and
 `identity.EventAccessRevoked` each evict the affected keys. Thirty seconds is short enough
 that a missed eviction self-heals faster than anyone raises a ticket — which is the point,
@@ -116,8 +129,8 @@ booking SHALL obtain decisions from it rather than computing them.
 **Acceptance**
 - [ ] `PermissionResolver` in identity-service is the only implementation of the §4 algorithm in the platform
 - [ ] Neither catalog-service nor booking-service contains a role comparison, a membership lookup or a permission set
-- [ ] `POST /api/internal/permissions/resolve` and `/resolve-many` are scope-gated per [ET-PLT-007](../../_platform/007-security-and-authorization/) R5
-- [ ] The endpoint returns a decision — `allowed`, plus the deciding step for diagnostics — and never the membership or grant documents
+- [ ] `/api/internal/authorization/*` (`check`, `event-access`, `check-same-organization`, `user-organizations`, `organization-name`) is scope-gated per [ET-PLT-007](../../_platform/007-security-and-authorization/) R5
+- [ ] `check` returns a decision — `allowed`, plus the deciding step for diagnostics — and never the membership or grant documents; the other four return only the identifiers or name they are named for
 - [ ] Permission resolution exists in exactly one implementation, `/api/internal/**` is scope-gated, and no `User.keycloakUserId` exists reports permission resolution in exactly one implementation
 - [ ] A calling service that cannot reach the resolver **denies**; it does not fall back to a local guess
 
@@ -140,9 +153,10 @@ WHILE an active event access grant exists for an actor and an event, THE SYSTEM 
 decide from that grant alone and SHALL NOT consult the organization role.
 
 **Acceptance**
-- [ ] A permission in the grant's `deniedPermissions` is denied, even when the event role and the organization role both allow it
+- [ ] A grant has no deny list: it restricts by being exhaustive, and no `deniedPermissions` field exists on it (ROADMAP D-56)
+- [ ] A member-level denial does not apply on an event where an active grant exists; the grant decides
 - [ ] A permission in the grant's `customPermissions` is allowed, even when the event role does not include it
-- [ ] A permission in neither, and not in the event role's set, is **denied** — resolution does not fall through
+- [ ] A permission in neither, and not in the event role's set, is **denied** with `GRANT_EXHAUSTIVE` — resolution does not fall through
 - [ ] An organization `ADMIN` holding a `VIEWER` grant on an event cannot edit that event, and can still edit every other event of that organization
 - [ ] An expired or non-`ACTIVE` grant is treated as absent, and resolution falls through to the organization role
 - [ ] A test drives every (grant present/absent × event role × organization role) combination in the §4 decision table
@@ -158,6 +172,7 @@ permissions §4 grants that role and SHALL record the decision.
 - [ ] `ORGANIZER` and `CUSTOMER` grant **nothing** at step 1 — an organizer's access comes entirely from membership
 - [ ] Every step-1 allow writes an audit row naming the actor, the permission, the resource and the organization it crossed into
 - [ ] A test asserts an `ORGANIZER` cannot reach another organization's resources through any permission
+- [ ] A platform role is allowed on a suspended organization (the status gate does not apply to it), and that allow is audited through `PlatformWideAccess` (ROADMAP D-57); an organizer or member on the same organization is refused with `ORGANIZATION_STATUS`
 
 ### ET-ORG-003-R5 · Grants are managed, scoped and expiring
 
@@ -167,6 +182,7 @@ IF a grant carries an expiry, THEN THE SYSTEM SHALL treat it as inactive afterwa
 **Acceptance**
 - [ ] `grantEventAccess` requires organization `OWNER`/`ADMIN`, or `EVENT_OWNER`/`EVENT_ADMIN` on that event
 - [ ] An `EVENT_ADMIN` cannot grant `EVENT_OWNER` — refused with `EVENT_ROLE_NOT_GRANTABLE` carrying `eventRole`
+- [ ] A granter may store as a custom permission only a code they hold themselves, and may store as a member denial only a code they hold themselves (ROADMAP D-58)
 - [ ] A grant to an actor who already has one for that event updates it rather than creating a second — `{ userId, eventId }` is unique
 - [ ] `revokeEventAccess` sets `status = REVOKED` with `revokedById`, `revokedAt` and a reason; it deletes nothing
 - [ ] `EVENT_OWNER` cannot be revoked — the event's creator holds it until the event is deleted
@@ -181,11 +197,16 @@ resolved, THEN THE SYSTEM SHALL deny and record it.
 **Acceptance**
 - [ ] `Permission` is a Java enum with one constant per §4 row and no wildcard
 - [ ] Every name is `{resource}:{action}`, lowercase, with no `*`
-- [ ] `customPermissions` and `deniedPermissions` accept only catalogue names; an unknown one is refused at write time
-- [ ] Resolving an unknown name denies and increments a metric — a silent deny on a typo'd permission is how a capability disappears without a bug report
+- [ ] A member's `customPermissions` and `deniedPermissions`, and a grant's `customPermissions`, accept only catalogue names; an unknown one is refused at write time
+- [ ] Resolving an unknown name is refused with `PERMISSION_UNKNOWN`, denies, and increments a metric — a silent deny on a typo'd permission is how a capability disappears without a bug report
 - [ ] Adding a permission changes this spec's §4 in the same commit as its first use
 
-### ET-ORG-003-R7 · Resolution is fast enough for a gate, and stale for seconds at most
+### ET-ORG-003-R7 · Resolution is fast enough for a gate, and stale for seconds at most — DEFERRED
+
+> **Deferred, not built.** The decision cache is added only when the measured p99 resolution
+> latency exceeds 20 ms; until a measurement says so, resolution is uncached and every box below
+> except the latency metric is unticked by design. Measuring comes first
+> ([ET-PLT-013 tasks](../../tasks/ET-PLT-013.md) P6).
 
 THE SYSTEM SHALL cache resolutions briefly and SHALL invalidate them when the inputs change.
 
@@ -200,12 +221,18 @@ THE SYSTEM SHALL cache resolutions briefly and SHALL invalidate them when the in
 
 ## 4. Model
 
-> **As built, 2026-09-18.** `myPermissions` returns the caller's platform roles and permission
-> codes (what `PermissionGate` reads); `myEffectivePermissions(organizationId, eventId)` returns the
-> resolved set for a context and the step that decided it; `currentUserPermissions` returns the
-> platform codes alone. All three are computed from code. The internal
-> `/api/internal/permissions/resolve` endpoints and the per-role cache below are not built; catalog
-> and booking call `/api/internal/authorization/*` with catalogue codes instead.
+> **As built, 2026-10-13.** `myPermissions` returns `{ permissions, roles }` — the caller's
+> platform permission codes and platform roles (what `PermissionGate` reads);
+> `myEffectivePermissions(organizationId, eventId)` returns the resolved set for a context and the
+> step that decided it; `currentUserPermissions` returns the platform codes alone. All three are
+> computed from code. The internal API is `/api/internal/authorization/*` (`check`, `event-access`,
+> `check-same-organization`, `user-organizations`, `organization-name`); the
+> `/api/internal/permissions/resolve` endpoints named in earlier drafts were never built, and the
+> R7 decision cache is deferred until a measured p99 over 20 ms.
+> Decisions applied: D-54 (`bank:manage`), D-55 (`promotion:manage`, `organization:view`), D-56
+> (grant exhaustive, no deny list), D-57 (platform roles bypass the status gate, audited), D-58
+> (only held permissions delegable), D-59 (`resource:action`), D-60 (platform-only codes by method
+> annotation).
 
 ### The permission catalogue — closed
 
@@ -270,6 +297,10 @@ The transitive closure declared in [ET-ORG-002 §4](../002-teams-and-invitations
 | `ADMIN` | `MANAGER` ∪ `MARKETER` + `event:delete`, `event:cancel`, `ticket:refund`, `team:invite`, `team:remove`, `team:role`, `event_access:grant`, `organization:edit`, `bank:manage`, `financial:view`, `payout:request`\* |
 | `OWNER` | `ADMIN` + `organization:billing`, `organization:transfer`, `organization:delete`, `payout:request` |
 
+`bank:manage` is held by `OWNER` and `ADMIN` unconditionally and does **not** follow
+`adminsCanRequestPayouts` (D-54); `promotion:manage` and `organization:view` are enforced as
+tabulated (D-55).
+
 \* `financial:view` for `MANAGER` and `payout:request` for `ADMIN` are gated by
 `settings.managersCanViewFinancials` and `settings.adminsCanRequestPayouts`. **These two are the
 only permissions that are not a pure function of the role**, and any cache or test keyed on role
@@ -285,9 +316,10 @@ switched.
 **Naming, as built (2026-09-18).** One colon per code, so `event:access:grant` is spelled
 `event_access:grant`. The catalogue is `com.pml.shared.security.Permission`; identity's
 `OrganizationRole` and `EventRole` hold the role sets, and `PermissionNameLintTest` fails the build
-on any permission spelled as a string outside the enum. Custom and denied permissions on a member or
-grant are catalogue codes (validator pattern `^[a-z_]+:[a-z_]+$`). A granter may store only codes
-they hold themselves, of the grant's scope or narrower (`requireDelegable`).
+on any permission spelled as a string outside the enum. Custom and denied permissions on a member,
+and custom permissions on a grant, are catalogue codes (validator pattern `^[a-z_]+:[a-z_]+$`). A
+granter may store, as a grant or as a denial, only codes they hold themselves, of the grant's scope
+or narrower (`requireDelegable`, D-58).
 
 ### Event role sets — step 2c
 
@@ -308,22 +340,22 @@ public Decision resolve(Actor actor, Permission permission, Resource resource) {
 
     // 1 — platform role. Short-circuits before any membership or grant read.
     if (platformGrants(actor.platformRoles(), permission)) {
-        audit.crossedTenant(actor, permission, resource);       // R4
-        return Decision.allow(Step.PLATFORM_ROLE);
+        audit.crossedTenant(actor, permission, resource);       // R4, D-57
+        return Decision.allow(Step.PLATFORM_ROLE);              // before the organization status gate
     }
 
-    // 2 — event access grant. EXHAUSTIVE: if one exists, resolution ends here.
+    // 2 — event access grant. EXHAUSTIVE: if one exists, resolution ends here (D-56).
     if (resource.isEventScoped()) {
         var grant = grants.activeFor(actor.userId(), resource.eventId(), clock.instant());
         if (grant != null) {
-            if (grant.deniedPermissions().contains(permission)) return Decision.deny(Step.GRANT_DENIED);
             if (grant.customPermissions().contains(permission)) return Decision.allow(Step.GRANT_CUSTOM);
             if (grant.eventRole().grants(permission))           return Decision.allow(Step.GRANT_ROLE);
             return Decision.deny(Step.GRANT_EXHAUSTIVE);        // no fall-through — R3
         }
     }
 
-    // 3 — organization membership
+    // 3 — organization membership; a suspended organization refuses non-platform actors
+    // before this point with ORGANIZATION_STATUS.
     var member = members.active(actor.userId(), resource.organizationId());
     if (member == null) return Decision.deny(Step.NOT_A_MEMBER);
 
@@ -354,14 +386,22 @@ step.
 | `ORGANIZER` | absent | — | `MANAGER`, `REMOVED` | allows | DENY | `NOT_A_MEMBER` |
 | `ORGANIZER` | `VIEWER` | not in set | `ADMIN` | allows | **DENY** | `GRANT_EXHAUSTIVE` |
 | `ORGANIZER` | `CHECK_IN` | in set | none | — | ALLOW | `GRANT_ROLE` |
-| `ORGANIZER` | `EDITOR` + denied | denied | `OWNER` | allows | **DENY** | `GRANT_DENIED` |
 | `ORGANIZER` | `CHECK_IN` + custom | custom | none | — | ALLOW | `GRANT_CUSTOM` |
 | `ORGANIZER` | expired | — | `MANAGER` | allows | ALLOW | `MEMBER_ROLE` |
 | `ORGANIZER` | absent | — | `MANAGER` + denied | allows | DENY | `MEMBER_DENIED` |
 | `ORGANIZER` | absent | — | `CONTRIBUTOR` + custom | does not allow | ALLOW | `MEMBER_CUSTOM` |
 | `CUSTOMER` | absent | — | none | — | DENY | `NOT_A_MEMBER` |
 
-Rows 6 and 8 are the ones that make a grant an override rather than an addition.
+Row 6 is the one that makes a grant an override rather than an addition; a member's denial on an
+event with an active grant is not a row, because the grant decides (D-56). The `EDITOR` +
+grant-level denial row (`GRANT_DENIED`) is removed, and with it the old pointer to "rows 6 and 8".
+
+**Step names:** `PLATFORM_ROLE`, `GRANT_CUSTOM`, `GRANT_ROLE`, `GRANT_EXHAUSTIVE`, `NOT_A_MEMBER`,
+`MEMBER_DENIED`, `MEMBER_CUSTOM`, `MEMBER_ROLE`, `DEFAULT`. **Refusal outcomes**, which are
+returned before the six steps and carry no step: `ORGANIZATION_STATUS` (the organization is not in
+a state that permits the action and the actor holds no platform role), `ORGANIZATION_UNKNOWN`,
+`NO_ORGANIZATION` (a request that needs an organization context and has none) and
+`PERMISSION_UNKNOWN` (a name outside the catalogue).
 
 ### Documents
 
@@ -372,7 +412,7 @@ Rows 6 and 8 are the ones that make a grant an override rather than an addition.
 | `_id` | `String` | |
 | `userId`, `eventId`, `organizationId` | `String` | `{userId, eventId}` unique |
 | `eventRole` | `EventRole` | the five of §4 |
-| `customPermissions`, `deniedPermissions` | `List<String>` | catalogue names only |
+| `customPermissions` | `List<String>` | catalogue names only; **no `deniedPermissions` field** (D-56) |
 | `grantedById`, `reason` | `String` | |
 | `status` | `AccessGrantStatus` | `ACTIVE`, `SUSPENDED`, `REVOKED`, `EXPIRED` |
 | `expiresAt` | `Instant` | nullable |
@@ -386,12 +426,17 @@ the `permission-model-catalogue` migration.
 
 ### Internal API
 
-| Method | Path | Scope | Request | Response |
-|---|---|---|---|---|
-| `POST` | `/api/internal/permissions/resolve` | `internal-read` | `{ userId, permission, resourceType, resourceId, organizationId }` | `{ allowed, step }` |
-| `POST` | `/api/internal/permissions/resolve-many` | `internal-read` | `{ userId, checks: [...] }` | `{ results: [{ key, allowed, step }] }` |
+| Method | Path | Scope | Purpose |
+|---|---|---|---|
+| `POST` | `/api/internal/authorization/check` | `internal-read` | a decision for `(userId, permission, organizationId, eventId?)`: `{ allowed, step }` |
+| `POST` | `/api/internal/authorization/event-access` | `internal-read` | the caller's event access for scanner and validation authorisation |
+| `POST` | `/api/internal/authorization/check-same-organization` | `internal-read` | whether two resources belong to one organization |
+| `GET` | `/api/internal/authorization/user-organizations` | `internal-read` | the organization ids a user is an active member of |
+| `GET` | `/api/internal/authorization/organization-name` | `internal-read` | an organization's display name, for denormalised read models |
 
-A caller that cannot reach this endpoint **denies** (R1).
+Every response carries a decision or an identifier, never a membership or grant document. A caller
+that cannot reach these endpoints **denies** (R1). A batch form of `check` is planned for
+[ET-PLT-013](../../tasks/ET-PLT-013.md) P6.
 
 ### GraphQL
 
@@ -403,7 +448,8 @@ Subgraph `identity`. Every field carries `@auth` explicitly.
 | `myEventAccessGrants` | query | `AUTHENTICATED` | `[EventAccessGrant!]!` |
 | `eventAccessGrants(eventId, status, page)` | query | `AUTHENTICATED` | `EventAccessGrantPage!` |
 | `userEventAccess(userId, eventId)` | query | `AUTHENTICATED` | `EventAccessGrant` |
-| `myPermissions(organizationId)` | query | `AUTHENTICATED` | `[String!]!` |
+| `myPermissions` | query | `AUTHENTICATED` | `{ permissions: [String!]!, roles: [String!]! }` — platform codes and roles |
+| `myEffectivePermissions(organizationId, eventId)` | query | `AUTHENTICATED` | the resolved codes for that context and the deciding step |
 | `grantEventAccess(input)` | mutation | `ORGANIZER` | `EventAccessGrant!` |
 | `updateEventAccess(input)` | mutation | `ORGANIZER` | `EventAccessGrant!` |
 | `revokeEventAccess(input)` | mutation | `ORGANIZER` | `EventAccessGrant!` |
@@ -424,6 +470,8 @@ All four cache-invalidating events of R7 are these two plus
 
 ### Redis keys
 
+**None today** — the R7 decision cache is deferred until a measured p99 over 20 ms. If built:
+
 | Key | TTL | Purpose | Authority |
 |---|---|---|---|
 | `perm:{userId}:{permission}:{resourceType}:{resourceId}` | 30 s | resolution cache, allows **and** denies | the resolver |
@@ -432,7 +480,8 @@ All four cache-invalidating events of R7 are these two plus
 
 `ACCESS_GRANT_UNKNOWN`, `EVENT_ROLE_NOT_GRANTABLE` — rows of
 [ET-PLT-005 §4](../../_platform/005-error-contract/) introduced by this spec.
-`ACTOR_NOT_PERMITTED` is what a denial becomes at the boundary.
+`ACTOR_NOT_PERMITTED` is what a denial becomes at the boundary; `ORGANIZATION_STATUS`,
+`ORGANIZATION_UNKNOWN`, `NO_ORGANIZATION` and `PERMISSION_UNKNOWN` are the refusal outcomes above.
 
 ## 5. Tasks
 
@@ -457,9 +506,9 @@ All four cache-invalidating events of R7 are these two plus
   - parallel-safe: yes
   - depends: T1
 
-- [ ] **T4 · The internal resolve and resolve-many endpoints**
+- [ ] **T4 · The internal authorization endpoints**
   - requirements: R1, R7
-  - files: `backend/identity-service/.../web/rest/InternalPermissionController.java`
+  - files: `backend/identity-service/.../web/rest/` (`/api/internal/authorization/*`)
   - verify: scope-gated per ET-PLT-007 R5; the response carries no membership or grant document
   - parallel-safe: yes
   - depends: T2
@@ -471,7 +520,7 @@ All four cache-invalidating events of R7 are these two plus
   - parallel-safe: yes — one service per agent
   - depends: T4
 
-- [ ] **T6 · The 30-second cache, its four evictions, and the self-heal test**
+- [ ] **T6 · The 30-second cache, its four evictions, and the self-heal test** *(deferred: only if measured p99 exceeds 20 ms)*
   - requirements: R7
   - files: `backend/identity-service/.../infrastructure/cache/`
   - verify: eviction suppressed, the correct answer returns at 31 s; denials are cached too

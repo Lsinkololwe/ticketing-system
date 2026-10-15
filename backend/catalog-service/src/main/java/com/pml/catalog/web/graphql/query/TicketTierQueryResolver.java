@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.Permission;
+import com.pml.shared.security.RequiresTenantPermission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.domain.model.TicketTier;
@@ -38,6 +40,7 @@ public class TicketTierQueryResolver {
      * Get all ticket tiers for an event
      */
     @DgsQuery
+    @RequiresTenantPermission(Permission.EVENT_VIEW)
     public Flux<TicketTier> eventTicketTiers(
             @InputArgument String eventId,
             @InputArgument Boolean includeHidden

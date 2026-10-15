@@ -1,258 +1,239 @@
 # ET-PLT-013 · The permission engine — tasks
 
 > **Spec** [`specs/_platform/013-permission-engine/spec.md`](../_platform/013-permission-engine/spec.md) · **Wave 1** · `blocked_by:` ET-PLT-002, ET-PLT-005, ET-PLT-007
-> **Status** `approved` — cleared to build
-> **Screens** the role-permission configuration surface in `Admin - Platform Configuration.dc.html` / `Admin - Users & Organizations.dc.html`. **No screen for the resolver itself.**
+> **Status** `approved` — cleared to build, **as narrowed by ROADMAP D-37 and D-54…D-60** (below)
+> **Screens** a **read-only** role matrix in `Admin - Platform Configuration.dc.html` / `Admin - Users & Organizations.dc.html`. **No screen for the resolver itself, and no editing surface.**
 > **Verify** `mvn -q -f backend/identity-service test -Dgroups=ET-PLT-013 -DfailIfNoTests=false` · `mvn -q -f backend/shared-library test -Dgroups=ET-PLT-013 -DfailIfNoTests=false` · `compose-supergraph.sh --static`
 
-**This spec amends [`ET-ORG-003`](ET-ORG-003.md) R6.** Its fixed `Permission` enum of 30 constants
-is replaced by the flat `module:action` catalogue defined here. ET-ORG-003's six-step precedence,
-its explicit-deny-beats-inherited-allow rule, its audit of every step-1 allow, and its
-single-implementation constraint are **unchanged and remain authoritative**. The two compose:
-ET-PLT-013 answers *what a role may do*; ET-ORG-003 answers *which source decides*.
+**This spec amends [`ET-ORG-003`](ET-ORG-003.md) R6**, and was itself narrowed by
+[ROADMAP D-37](../ROADMAP.md): the role → permission table lives **in the software** and changes
+only by a release. No administrator edits it at runtime, so there is no stored mapping, no cache of
+one, no change log and no write mutation. What this spec still owns is the *shape* of the catalogue,
+that it is declared once in code and fully enforced, and how a caller's platform roles combine.
 
-> **Interpretation recorded** — "no view for role permissions" is read as *no MongoDB view and no
-> `$lookup` on the authorization path* (the shape a relational design would need). An **admin
-> configuration UI is in scope**, because the platform administrator must configure the mapping in
-> full. If that reading is wrong, FE-1…FE-4 are what change.
+ET-ORG-003's six-step order, its audit of every step-1 allow and its single-implementation
+constraint are unchanged. The two compose: ET-PLT-013 answers *what a code means and who holds it
+by platform role*; ET-ORG-003 answers *which source decides*.
+
+## Requirement disposition
+
+| Requirement | Disposition | Reason / pointer |
+|---|---|---|
+| **R1** closed key grammar | **Stands** | `resource:action` as in use, per [D-59](../ROADMAP.md): one colon, lower-case snake-case parts, no dots, no `*`. The `read`/`update` vocabulary is not adopted and no code is renamed. |
+| **R2** catalogue declared in code | **Stands** | `com.pml.shared.security.Permission` is the catalogue. Every code is enforced, or is listed in an explicit role-gated register (D-60). |
+| **R3** one stored document per role | **Withdrawn** | D-37: no stored mapping exists; `identity_permissions` and `identity_role_permissions` were dropped. The mapping is `Permission.grantedByPlatformRoles` and identity's `OrganizationRole` / `EventRole`. |
+| **R4** implication expander (`manage` ⇒ CRUD) | **Withdrawn** | D-37 and D-59: codes are not `module:verb` with an aggregate verb, so there is nothing to expand. Role sets are written out in code and reviewed in the diff. |
+| **R5** union across roles, fail closed | **Stands** | Realised by the single platform-role model (P3) and the pure decider (P4). |
+| **R6** inactive role / permission | **Withdrawn** | D-37: nothing is stored, so nothing has an `active` flag. A code is retired by a release. |
+| **R7** per-role cache | **Withdrawn** | D-37: no stored mapping to cache. The decision cache of ET-ORG-003 R7 is separate and deferred until a measured p99 above 20 ms (P6). |
+| **R8** `SUPER_ADMIN` edits with reason and change log | **Withdrawn** | D-37: the mapping is changed by a release, whose record is version control. |
+
+Interpretation recorded in the original ("no view for role permissions" means no `$lookup` on the
+authorization path) is now moot: there is no stored mapping to read.
 
 ## R0 · Reconcile
 
-The persistence baseline already registers `identity_permissions` and `identity_role_permissions`
-(previously attributed to ET-ORG-003; **now attributed to this spec**, and
-`identity_role_permission_changes` added alongside them).
-
 ```bash
 grep -rn 'Permission\b' backend/shared-library backend/identity-service --include='*.java' | grep -v /src/test/
-grep -rn 'hasAuthority\|hasRole\|@PreAuthorize' backend --include='*.java' | grep -v /src/test/
+grep -rn 'hasAuthority\|hasRole\|@PreAuthorize\|@RequiresPermission' backend --include='*.java' | grep -v /src/test/
+grep -rn '"[a-z_]*:[a-z_]*"' backend --include='*.java' | grep -v /src/test/ | grep -v 'security/Permission.java'
 ```
 
-Classify. The rows that will decide the size of this slice:
-- Does a fixed `Permission` enum exist? It is **superseded**, not deleted — record every constant
-  and map it onto a flat `module:action` key so no authority is silently dropped in translation.
-- Is any role list stored in MongoDB? **Keycloak is the sole source of truth for roles** — a
-  MongoDB role collection is `contradicted`.
-- Is any permission string a wildcard? Wildcards are refused, not interpreted.
+Classify. The rows that decide the size of this slice:
+- Which `Permission` codes are enforced, and which are declared and checked nowhere. Known at the
+  time of D-54/D-55: `bank:manage`, `promotion:manage` and `organization:view` were declared and
+  unchecked; `escrow:read` is checked in booking but is not a catalogue code (P1).
+- How many places hold a platform-role hierarchy (expected three: `Permission.grantedByPlatformRoles`,
+  `StaffRole.covers`, `AuthDirective.checkRoleHierarchy`). They are reduced to one in P3.
+- Is any permission spelled as a string outside the enum? `PermissionNameLintTest` already fails the
+  build on it; confirm it still passes before P1.
 
-## A · Backend
+## A · Backend (build order P1 → P8)
 
-### BE-1 · `PermissionKey`, the `Action` vocabulary and the module registry
-- **Spec** R1 · **§5** T1 · **depends** R0 · **parallel-safe** no *(every service imports it)*
-- **Files** `backend/shared-library/src/main/java/com/pml/shared/auth/`
-- Grammar `^[a-z][a-z0-9_]+:[a-z][a-z0-9_]+$` — **exactly one colon, and no dots.** A key is two
-  parts, always, so `split(':')` is the entire parser.
-- A finer subject is its **own flat module** — `ticket_tiers`, not `events.tiers`; `ticket_qr`, not
-  `tickets.qr`; `bank_accounts`, not `payouts.accounts`. A dotted grammar forces every reader to
-  know that the *last* dot is the special one, and produces keys nobody can scan at a glance.
-- **Acceptance** the grammar accepts every catalogue key and rejects every wildcard **and every
-  dotted key**; `parse` is **total** — every accepted key round-trips to the same string.
+### BE-1 · P1 — Characterization and defects
+- **Spec** R2, R5 · **depends** R0 · **parallel-safe** no
+- **Characterize first**: pin today's behaviour with tests before changing it, so a refactor in P2–P4
+  cannot move a decision unnoticed.
+- Remove the **dead `"escrow:read"` check** in booking `EscrowServiceImpl` — a string that is not a
+  catalogue code can never be granted, so the check fails closed for everyone but a platform
+  superuser and protects nothing.
+- Guards take a `Permission`, **not a `String`**; a string overload is deleted, not deprecated.
+- `Organization.canPerform` is made **exhaustive** over `Permission` (a `switch` with no default), so
+  adding a code is a compile error until its organization behaviour is decided.
+- **Pin the delegation rule (D-58)**: only a permission the actor holds may be granted *or denied*
+  to a member. Both directions are asserted, including the denial case.
+- **Acceptance** characterization suite green before and after; no string-typed permission guard
+  remains; `canPerform` has no default branch; delegation tests cover grant and deny.
 
-### BE-2 · The code-declared registry and the catalogue bootstrapper
-- **Spec** R2 · **§5** T2 · **depends** BE-1 · **parallel-safe** no
-- **Acceptance** bootstrapping twice produces identical rows; **no `createPermission` mutation
-  exists**; an administrator may edit only `description` and `active`.
-- **The load-bearing test: every registry key is enforced by at least one `@auth` field or method
-  annotation**, asserted by scanning both sets. A permission nobody enforces looks like protection
-  and is not — it appears in the admin picker, gets granted, and protects nothing.
-- Same insert-never-update discipline as [`ET-PLT-014`](ET-PLT-014.md) BE-3: a description an
-  administrator rewrote must survive a deployment.
+### BE-2 · P2 — Typed `Module` and `Action` on `Permission`
+- **Spec** R1 · **depends** BE-1 · **parallel-safe** no *(every service imports the enum)*
+- **Files** `backend/shared-library/src/main/java/com/pml/shared/security/`
+- Each constant carries its resource (module) and action as typed values; the code string is
+  derived, never typed twice.
+- **Acceptance** a grammar test accepts every constant's code and asserts: exactly one colon, no
+  `.`, no `*`, lower-case snake-case parts; parsing a code is total and round-trips; two constants
+  never share a code; the existing 30 codes are unchanged.
 
-### BE-3 · `identity_role_permissions` — one document per role
-- **Spec** R3 · **§5** T3 · **depends** BE-2 · **parallel-safe** no
-- `_id` is the **lower-cased Keycloak role name**. `grants` is an array of catalogue keys.
-- **Acceptance** resolution issues **exactly one query** per uncached role, asserted by query
-  count; **no `$lookup`, aggregation or view participates**; **no `identity_roles` collection
-  exists**; a grant change is a single-document update needing no transaction; a role with no
-  document resolves to the empty set rather than erroring; an unknown key refuses at write time
-  with `PERMISSION_UNKNOWN`.
-- Why this shape and not three collections: a role's grants are read together, change together and
-  number in the dozens. Embedding them removes the join a relational design needs a view for, and
-  makes the edit atomic without a transaction.
+### BE-3 · P3 — One platform-role model and `Authorities` constants
+- **Spec** R5 · **depends** BE-2 · **parallel-safe** no
+- Replace the **three hierarchies** — `Permission.grantedByPlatformRoles`, `StaffRole.covers`,
+  `AuthDirective.checkRoleHierarchy` — with one `PlatformRole` model and an `Authorities` constants
+  class. The other two become readers of it.
+- Role names appear as constants, never as literals (`SUPER_ADMIN`, `ADMIN`, `FINANCE`,
+  `FINANCE_LEAD`, `ORGANIZER`, `CUSTOMER`).
+- **Acceptance** exactly one place decides "does platform role X cover Y"; a test asserts the three
+  former call sites return the same answers as before for every (role, permission) pair; no role
+  string literal remains in production source.
 
-### BE-4 · `PermissionExpander` and its idempotence test
-- **Spec** R4 · **§5** T4 · **depends** BE-1 · **parallel-safe** no *(every service imports it)*
-- **Files** `backend/shared-library/.../auth/PermissionExpander.java` — stateless, no dependencies,
-  no I/O. Not a Spring bean.
-- **Two rules and no third**: `manage` ⇒ CRUD, and `create|update|delete` ⇒ `read`.
-- **Acceptance** both rules; **`manage` implies no cross-cutting verb, asserted per verb**;
-  `expand(expand(x)) == expand(x)` over 1,000 randomised catalogue subsets; expansion introduces
-  no key absent from the catalogue **and no key containing a `.`**.
-- The per-verb assertion matters: `payouts:manage` must **not** confer `payouts:approve`. Reviewing
-  someone else's payout request is a different authority from editing one, and collapsing them
-  destroys the dual control [`ET-FIN-003`](ET-FIN-003.md) BE-5 depends on.
+### BE-4 · P4 — `PermissionDecider`, `DecisionContextLoader`, `EffectivePermissions`, `DelegationPolicy`
+- **Spec** R5 · **depends** BE-3 · **parallel-safe** no
+- `PermissionDecider` is a **pure function** of an already-loaded context and a permission: no I/O,
+  no clock read, never throws. It returns the outcome and the deciding step (ET-ORG-003 §4).
+- `DecisionContextLoader` does the reads (membership, grant, organization settings and status) and
+  hands the decider a value.
+- `EffectivePermissions` (what `myEffectivePermissions` returns) is **derived by running the
+  decider over every catalogue code**, never computed by a second path — a second path is a second
+  resolver.
+- `DelegationPolicy` holds the D-58 rule in one place.
+- **Acceptance** every ET-ORG-003 decision-table row asserts outcome and step with no database;
+  the effective set equals the decider's answer for every code; any failure while loading denies;
+  union across platform roles, order-independent under permutation, and no roles denies.
 
-### BE-5 · The evaluator, the role union and the fail-closed paths
-- **Spec** R5, R6 · **§5** T5 · **depends** BE-4 · **parallel-safe** no
-- **Acceptance** roles read **only** from `realm_access.roles`; no roles → deny; the result is the
-  **union** across roles, not the intersection (test it where each role alone is insufficient);
-  order-independent under permutation; a denied check performs no extra repository call; **the
-  evaluator never throws — an internal failure denies**.
-- Inactive role or inactive permission grants nothing, and deactivation takes effect within the
-  cache TTL with no deployment.
+### BE-5 · P5 — Enforcement closure
+- **Spec** R2 · **depends** BE-4 · **parallel-safe** yes *(one service per agent)*
+- **Enforce what was declared and unchecked**: `bank:manage` per **D-54** (Owner and Admin, whatever
+  the payout switch says; `adminsCanRequestPayouts` governs only `payout:request`);
+  `promotion:manage` and `organization:view` per **D-55**. A non-member or removed member sees
+  *not found* on a profile read.
+- **Platform-only codes** get a method-level `@RequiresPermission` on the specific operation, per
+  **D-60**: `payout:approve`, `organization:suspend`, `organization:approve`, `platform:configure`,
+  `transaction:recover`, `audit:view`. They resolve against the single platform-role model; the
+  `@auth` directive keeps role gates only.
+- **`PermissionEnforcementTest`, both directions**: every `Permission` constant is enforced at least
+  once *or* appears in the explicit role-gated register; every enforced code is a constant. A code
+  in neither set fails the build.
+- **Acceptance** the test above; each newly enforced code has an allow and a deny integration test;
+  `FINANCE` still holds no event-editing permission.
 
-### BE-6 · The per-role cache, non-cached failures, cross-instance eviction
-- **Spec** R7 · **§5** T6 · **depends** BE-5 · **parallel-safe** no *(cache and eviction together)*
-- **Acceptance** the key is the lower-cased role name, so token/store casing collapses to one
-  entry; TTL `PT5M`; **a failed load is not cached** and the next call succeeds; a mapping change
-  publishes `identity.RolePermissionsChanged` and every instance evicts within `PT5S`; a Redis
-  flush grants nothing that is not in the store; **10,000 principals over 5 roles hold 5 entries**.
-- Two traps worth naming because both are easy to reintroduce:
-  - **Caching by principal** — unbounded memory, and a role change evicts nothing useful.
-  - **Caching a failure** — a transient store blip would strip a role of every permission for the
-    whole TTL.
-- If the cache is a Spring `@Cacheable` proxy, **the call must cross a bean boundary.** A sibling
-  method calling `this.getPermissionsForRole(...)` bypasses the proxy and silently disables caching
-  entirely — the failure looks like latency, not like a bug.
+### BE-6 · P6 — Shared `IdentityAuthorizationClient`, check-many, latency first
+- **Spec** R5 · **depends** BE-4 · **parallel-safe** yes
+- One client in the shared library for catalog and booking, over `/api/internal/authorization/*`
+  (`check`, `event-access`, `check-same-organization`, `user-organizations`, `organization-name`);
+  a `check` that takes many (permission, resource) pairs so a list of 50 events is one call.
+- An unreachable identity-service **denies**; the client never guesses.
+- **Measure p99 resolution latency before any cache is considered.** A cache is added only if the
+  measured p99 exceeds 20 ms warm (ET-ORG-003 R7); until then none exists.
+- **Acceptance** both services use the one client; a source scan finds no second HTTP client for
+  these paths; a stopped identity-service denies a mutation that would otherwise succeed; p99 is
+  recorded in the task notes.
 
-### BE-7 · Administration — `SUPER_ADMIN` writes, mandatory reason, append-only change log
-- **Spec** R8 · **§5** T7 · **depends** BE-3 · **parallel-safe** yes
-- **Acceptance** `ADMIN` reads and cannot write; a reasonless change refuses; every change appends
-  actor, role, added, removed, reason, instant; **no change row is ever updated or deleted**;
-  grants as at a past instant are recoverable; **granting a key the actor does not hold is
-  permitted and audited** — a platform administrator configures roles they do not occupy; a change
-  takes effect on live sessions within the eviction budget.
-
-### BE-8 · Amend [`ET-ORG-003`](ET-ORG-003.md) — the resolver consumes this catalogue
-- **Spec** R5 · **§5** T8 · **depends** BE-5 · **parallel-safe** **no — it amends another spec's core**
-- Steps 1 (platform role) and 3 (organization role) read the expanded set from this engine. Steps
-  2 (event grant), 4 (custom) and 5 (explicit deny) are unchanged.
-- **Acceptance** precedence and explicit-deny behaviour **unchanged**, proven by re-running
-  ET-ORG-003's decision table; permission resolution still exists in **exactly one**
-  implementation; ET-ORG-003's audit of every step-1 allow still fires.
-- Update [`ET-ORG-003`](../organization/003-permission-resolution/spec.md) §3 R6 and its task file
-  to reference this catalogue rather than the 30-constant enum, so the two specs cannot disagree.
-
-### BE-9 · The subgraph half, `myPermissions`, and the generated frontend catalogue
-- **Spec** R2, R8 · **§5** T9 · **depends** BE-7 · **parallel-safe** **no — shared identity SDL**
-- 6 queries, 3 mutations; every admin field `@tag(name: "admin")`.
-- **Acceptance** static composition; **the frontend catalogue is generated from the registry, not
-  hand-written**; no client implements precedence.
-- Generating it is the improvement over a hand-mirrored catalogue: two files that mirror each other
-  by discipline drift the first time someone adds a key to one.
+### BE-7 · P8 — Remove retired remnants *(only after the migration is confirmed)*
+- **Spec** R2 (D-37) · **depends** BE-5, BE-6 · **parallel-safe** no
+- **Gate on confirmation**: the migration that dropped the stored mapping has run in every
+  environment, checked with the MongoDB MCP before any deletion.
+- Remove `IdentityCollections.PERMISSIONS` and `ROLE_PERMISSIONS`; the two `_class` rewrites that
+  mention them; the rename entries; the now-empty `MongoSchemaValidationConfig` section; and the
+  `EventNameClosureTest` allowance for `identity.RolePermissionsChanged`.
+- **Acceptance** no reference to the retired collections or event remains (`grep` clean); the
+  closure test passes without its allowance; a fresh database and a migrated one end in the same
+  state.
 
 ## B · Contract
 
 ### GQL-1 · Compose, generate, verify roles
-- **depends** BE-9 · **parallel-safe** no
+- **depends** BE-4 · **parallel-safe** no
+- **Surface as built**: `myPermissions` returns `{ permissions, roles }`;
+  `myEffectivePermissions(organizationId, eventId)` returns the resolved set and the deciding step;
+  `currentUserPermissions` returns platform codes alone; `permissions`, `permission(code)` and
+  `rolePermissions(role)` read the in-code catalogue. **No mutation edits permissions.**
 - `compose-supergraph.sh --static` → `npm run codegen` → commit; **restart the local router**.
-- **Acceptance** all nine operations appear in `docs/FRONTEND_GRAPHQL_CONTRACT.md` with their roles.
+- **Acceptance** the operations appear in `docs/FRONTEND_GRAPHQL_CONTRACT.md` with their roles.
 
-## C · Frontend — configuration, not resolution
+## C · Frontend — reading, not resolving
 
 **No screen for the evaluator.** Its effects appear everywhere as enabled and disabled affordances;
-its algorithm appears nowhere.
+its algorithm appears nowhere. *(FE-2, FE-3, FE-4 are withdrawn with R3, R6, R8; there is nothing to
+edit, no history to show and no unmapped or orphaned stored state.)*
 
-### FE-1 · Role → permission matrix
+### FE-1 · Role matrix — **read-only**
 - **depends** GQL-1 · **parallel-safe** no
-- Roles down (from `keycloakRoles`, read **live from Keycloak** — never a stored list), permission
-  groups across. Grouped by the §4 module groups, from `permissionCatalogue`.
-- **Show granted keys and implied keys differently.** An administrator granting `events:manage`
-  must see that `events:read` is now held without having been ticked — otherwise they tick all
-  five and the compact grant the engine was designed around never gets used.
+- Roles down, permission groups across, from `rolePermissions` / `permissions`. Platform roles and
+  organization and event roles shown as the code defines them, including the two conditional cells
+  (`financial:view` for `MANAGER`, `payout:request` for `ADMIN`) marked as setting-dependent.
+- **No edit affordance of any kind** — not disabled checkboxes, none. The mapping changes by release.
 - Wide matrix scrolls inside its own container; the page body never scrolls horizontally.
-- **testids** `role-matrix`, `role-row`, `permission-cell`, `permission-cell-implied`, `permission-group`
+- **testids** `role-matrix`, `role-row`, `permission-cell`, `permission-cell-conditional`, `permission-group`
 
-### FE-2 · Editing a role's grants
-- **depends** FE-1 · **parallel-safe** no
-- `SUPER_ADMIN` only — an `ADMIN` sees the matrix with **no edit affordance**, not disabled
-  checkboxes.
-- Reason mandatory. The confirmation names **what is being added and removed**, and states that
-  holders are affected on their next request.
-- Granting `payouts:approve`, `refunds:manage`, `configuration:configure` or `permissions:manage`
-  is called out as consequential before it is applied.
-- **testids** `role-grants-edit`, `role-grants-reason`, `role-grants-diff-added`, `role-grants-diff-removed`, `role-grants-confirm`, `role-matrix-readonly`
-
-### FE-3 · Change history
-- **depends** BE-7 · **parallel-safe** yes
-- Per role: added, removed, actor, reason, time. Append-only, **no edit affordance** — the same
-  discipline as the ledger ([`ET-FIN-001`](ET-FIN-001.md) FE-3) and the config log
-  ([`ET-ADM-002`](ET-ADM-002.md) FE-3).
-- **testids** `role-history-row`, `role-history-added`, `role-history-removed`, `role-history-reason`
-
-### FE-4 · Unmapped and orphaned states
-- **depends** FE-1 · **parallel-safe** yes
-- A Keycloak role with **no mapping** is shown as holding nothing, plainly — it is the fail-closed
-  default and an administrator must be able to see it rather than infer it from an empty row.
-- A catalogue row present in the store but absent from the code registry is marked **orphaned** and
-  is **not grantable** (BE-2).
-- **testids** `role-unmapped`, `permission-orphaned`
-
-### FE-5 · `myPermissions` drives every affordance, in all three apps
+### FE-5 · Typed, server-driven gates; generated `PermissionCode`
 - **depends** GQL-1, [`ET-ORG-003`](ET-ORG-003.md) FE-2 · **parallel-safe** no
-- One fetch per session, consumed by the existing `PermissionGate` in the shared barrel.
-- **The generated catalogue gives compile-time key checking** — a typo in a gate is a build error,
-  not a silently-always-false check. That is the single biggest practical win of a generated
-  catalogue over string literals.
-- **Do not implement expansion or precedence in TypeScript.** The server returns the expanded
-  union; the client reads it.
-- **Acceptance** no client-side precedence or expansion logic exists, asserted by a lint rule in
-  the compliance suite.
+- `PermissionCode` is a union type **generated from `Permission`**, not hand-written. `PermissionGate`
+  accepts only a `PermissionCode`, so a typo is a build error rather than a silently-false check.
+- One fetch per session of `myPermissions`; per-context checks use `myEffectivePermissions`. The
+  server returns the resolved answer and the client reads it.
+- **Do not implement precedence or role hierarchy in TypeScript.**
+- **Acceptance** a gate on a non-existent code fails the build (asserted by a build test); the
+  generated file matches the enum (checked in CI); no client precedence logic, by lint rule.
 
 ## D · Tests
 
-### TS-1 · Grammar *(L1)*
-Every catalogue key parses; **wildcards and dotted keys both refused**; `parse` total; the action is
-always a member of the closed vocabulary; `split(':')` yields two parts for every key in the
-catalogue.
+### TS-1 · Grammar and catalogue *(L1)*
+Every constant's code matches the grammar; one colon, no `.`, no `*`; typed module and action
+reproduce the code; no duplicates; the code set equals the documented 30 plus any added by an
+approved decision.
 
-### TS-2 · Catalogue *(L3 + L4)*
-Bootstrap idempotent. **Registry ↔ annotation equality**: every declared key is enforced somewhere,
-and every enforced key is declared. Both directions — an enforced-but-undeclared key cannot be
-granted, and a declared-but-unenforced key is a lie.
+### TS-2 · Role model *(L1)*
+One platform-role model; the three former hierarchies agree for every (role, permission) pair;
+union across roles, order-independent; no roles denies; the decider never throws on any input.
 
-### TS-3 · Mapping shape *(L3)*
-One query per role, no `$lookup`, no `identity_roles` collection. Unknown key refused at write.
-Missing document → empty set. Confirm the indexes live via **MongoDB MCP** `collection-indexes`.
+### TS-3 · Enforcement closure *(L3 + L4)*
+`PermissionEnforcementTest` both ways: enforced-but-undeclared and declared-but-unenforced-and-
+unregistered each fail. Each of the D-54, D-55 and D-60 codes has allow and deny integration
+tests on Testcontainers.
 
-### TS-4 · Expansion *(L1)*
-Both rules; `manage` implies no cross-cutting verb, **per verb**; idempotent over 1,000 randomised
-subsets; introduces no uncatalogued key and no dotted key.
+### TS-4 · ET-ORG-003 regression *(L1/L3)*
+The decision table re-run with the D-56 rows removed and the D-57 platform-bypass row added;
+every row asserts the same outcome and deciding step as the spec states.
 
-### TS-5 · Evaluation *(L1/L3)*
-Union not intersection; order-independent; no roles → deny; inactive role and inactive permission
-each grant nothing; the evaluator never throws.
+### TS-5 · OWASP cases *(L3)*
+- **A01 Broken access control** — member removed mid-session denied on next request; a non-member
+  reads a profile and sees *not found*, not *forbidden*; a delegate cannot grant a permission they
+  lack; a delegate cannot deny one they lack (D-58); cross-organization access refused.
+- **A04 Insecure design** — an unreachable identity-service denies; an unknown code denies and is
+  counted; adding a constant without deciding `canPerform` does not compile.
+- **A05 Security misconfiguration** — every `/api/internal/**` path requires its scope; a method
+  with `@RequiresPermission` and no authenticated caller is refused, not skipped; no `*` code
+  accepted anywhere.
+- **A08 Software and data integrity** — the generated `PermissionCode` equals the enum; the
+  migration that dropped stored mappings leaves no document a code path still reads.
+- **A09 Logging and monitoring** — every platform-role allow into an organization, including a
+  suspended one (D-57), writes an audit row naming actor, permission, resource and organization; a
+  denied delegation is logged.
 
-### TS-6 · Cache *(L3)*
-10,000 principals / 5 roles → 5 entries. Failed load retried, not cached. Mapping change evicts
-across instances within `PT5S` (run two instances). Redis flush grants nothing.
-**Assert the proxy actually fires** — a self-invocation would silently disable caching, so assert
-on the query count, not on latency.
-
-### TS-7 · Administration *(L3)*
-`ADMIN` cannot write; reasonless change refuses; change rows immutable; past grants recoverable;
-a live session is affected within the eviction budget.
-
-### TS-8 · ET-ORG-003 regression *(L1/L3 — the amendment's safety net)*
-**Re-run ET-ORG-003's full decision table unchanged.** Every row must assert the same outcome
-**and the same deciding step** as before this amendment. If any row changes, the amendment has
-altered precedence, which it must not.
-
-### TS-9 · e2e *(L5, admin)*
-- Matrix: granted vs implied visually distinct; loading, empty, error, populated.
-- `ADMIN` sees no edit affordance; `SUPER_ADMIN` does.
-- Edit shows an added/removed diff and demands a reason.
-- Unmapped role and orphaned permission states render.
-- A gate keyed on a non-existent permission is a **compile error**, asserted by a build test.
+### TS-6 · e2e *(L5, admin)*
+- Matrix: loading, empty, error, populated; conditional cells marked; **no edit affordance** for
+  any role including `SUPER_ADMIN`.
+- A gate keyed on a non-existent code is a compile error.
 - Compliance: teal, Inter, tokens, `data-brand="admin"`.
 
 ## E · Gate
 
-- [x] **Spec `approved`** (2026-08-18)
-- [ ] R0 recorded; every old `Permission` constant mapped to a flat `module:action` key, none dropped
-- [ ] No MongoDB role collection; Keycloak is the sole source of truth for roles
-- [ ] Grammar closed and **flat**: exactly one colon, no dots; wildcards and dotted keys both refused, not interpreted
-- [ ] Every finer subject is its own module (`ticket_tiers`, `ticket_qr`, `bank_accounts`, `user_phone`), never a dotted path
-- [ ] Registry ↔ annotation equality asserted in both directions
-- [ ] One document per role; **one query, no `$lookup`, no view** on the authorization path
-- [ ] `manage` implies CRUD and **no** cross-cutting verb, asserted per verb
-- [ ] Expansion idempotent over 1,000 randomised cases
-- [ ] Union across roles; evaluator never throws; every failure path denies
-- [ ] Cache keyed by role; failures never cached; 5 entries for 10,000 principals
-- [ ] Cross-instance eviction within `PT5S`; Redis flush grants nothing
-- [ ] `SUPER_ADMIN` writes with a mandatory reason; change log append-only and time-queryable
-- [ ] **ET-ORG-003's decision table re-run unchanged — same outcome and same deciding step on every row**
-- [ ] ET-ORG-003 §3 R6 and its task file updated to reference this catalogue
-- [ ] Frontend catalogue **generated**, not hand-written; a bad key is a compile error
-- [ ] No client-side expansion or precedence logic
-- [ ] `mvn -q -f backend verify -Dgroups=ET-PLT-013 -DfailIfNoTests=false` green
-- [ ] Spec `status:` → `implemented`
+- [x] **Spec `approved`** (2026-08-18; narrowed 2026-09-18 by D-37 and 2026-10-13 by D-54…D-60)
+- [x] R0 recorded; every string-typed permission and every dead check classified (F-069)
+- [x] P1 characterization suite in place (`PermissionDecisionTableTest`); `escrow:read` removed; guards take `Permission`; `canPerform` exhaustive
+- [x] Delegation rule D-58 pinned (`delegationIsBoundedInBothDirections`)
+- [x] `Permission` carries a typed action and a grammar check at class load; grammar test green (one colon, no dots, no `*`)
+- [x] One platform-role model replaces the three hierarchies; no role literal in production source (`AuthorityLiteralLintTest`)
+- [x] Pure `PermissionDecider`; `EffectivePermissions` derived from it; `DelegationPolicy` single-sourced
+- [x] `PermissionEnforcementTest` green; one registered exception (`platform:configure`, open item 1 of F-069)
+- [x] `bank:manage` (D-54), `promotion:manage` and `organization:view` (D-55) enforced with allow and deny tests
+- [x] `@RequiresPermission` on payout approval, organization approve and suspend, transaction recovery, audit read **and platform configuration** (super administrator only, F-072); every service gate is a catalogue permission and the role-literal budgets are 0
+- [x] Platform roles bypass the organization status gate (tested) **and every state-changing allow is audited**: `RequiresPermissionAspect` records `PLATFORM_PERMISSION_EXERCISED` with the permission, role, actor and service to the service's `PlatformWideAuditSink` (`RequiresPermissionAspectTest`, `PlatformWideAuditEndToEndTest`); views are not recorded, a failing sink does not block
+- [x] Shared `IdentityAuthorizationClient` with `check-many` (`POST /api/internal/authorization/check-many`, 100 per call, answered in order); unreachable identity denies, per entry for a batch; catalog, booking and `RemoteTenantMemberships` use it and `AuthorizationClientSingleLintTest` keeps a second client out
+- [x] p99 measured before any cache: 1 000 decisions against a real MongoDB p50 0.78 ms, p99 2.25 ms (`PermissionDecisionTableTest.decisionLatencyIsMeasured`); `identity.authorization.decision` timer with p50/p95/p99 in production; no cache built
+- [x] Frontend `PermissionCode` generated and kept current by a test; a bad code is a compile error
+- [x] Role matrix is read-only and covered by Playwright (`gating.spec.ts`: no edit controls for super admin or admin; finance has no access)
+- [x] No client-side precedence or hierarchy logic
+- [x] Retired remnants removed after the migration was confirmed on the dev database (no `*permissions` collection remained): the two collection constants, the `_class` rewrites, the rename entries and the `RolePermissionsChanged` allowance and spec row; the migration keeps dropping them by name in any environment that still has them
+- [x] OWASP A01 / A04 / A05 / A08 / A09 cases pass (`PermissionGuardMisconfigurationTest` for A05 and A09; the aspect's audit tests for A09)
+- [x] `mvn -q -f backend verify -Dgroups=ET-PLT-013 -DfailIfNoTests=false` green (2026-10-13)
+- [x] Spec `status:` → `implemented` (2026-10-15)

@@ -1,12 +1,15 @@
 package com.pml.identity.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.shared.constants.OrganizationStatus;
 import com.pml.identity.domain.model.Organization;
 import com.pml.identity.service.OrganizationMemberService;
 import com.pml.identity.service.OrganizationService;
+import com.pml.identity.service.PermissionResolutionService;
+import com.pml.shared.security.Permission;
 import com.pml.identity.web.graphql.dto.pagination.*;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +32,7 @@ public class OrganizationQueryResolver {
 
     private final OrganizationService organizationService;
     private final OrganizationMemberService memberService;
+    private final PermissionResolutionService permissionResolution;
 
     // ========================================================================
     // SINGLE ENTITY QUERIES
@@ -43,7 +47,7 @@ public class OrganizationQueryResolver {
     public Mono<Organization> organization(@InputArgument String id) {
         log.debug("GraphQL query: organization(id={})", id);
         Objects.requireNonNull(id, "Organization ID is required");
-        return organizationService.findById(id);
+        return readableByCaller(organizationService.findById(id));
     }
 
     /**
@@ -55,7 +59,7 @@ public class OrganizationQueryResolver {
     public Mono<Organization> organizationBySlug(@InputArgument String slug) {
         log.debug("GraphQL query: organizationBySlug(slug={})", slug);
         Objects.requireNonNull(slug, "Slug is required");
-        return organizationService.findBySlug(slug);
+        return readableByCaller(organizationService.findBySlug(slug));
     }
 
     /**
@@ -67,7 +71,7 @@ public class OrganizationQueryResolver {
     public Mono<Organization> organizationByOwnerId(@InputArgument String ownerId) {
         log.debug("GraphQL query: organizationByOwnerId(ownerId={})", ownerId);
         Objects.requireNonNull(ownerId, "Owner ID is required");
-        return organizationService.findByOwnerId(ownerId);
+        return readableByCaller(organizationService.findByOwnerId(ownerId));
     }
 
     /**
@@ -105,7 +109,7 @@ public class OrganizationQueryResolver {
      * Schema: organizationApplications(status: OrganizationStatus, pagination: OffsetPaginationInput): OrganizationApplicationOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.ORGANIZATION_DIRECTORY_VIEW)
     public Mono<OrganizationApplicationOffsetPage> organizationApplications(
             @InputArgument OrganizationStatus status,
             @InputArgument OffsetPaginationInput pagination
@@ -129,7 +133,7 @@ public class OrganizationQueryResolver {
      * Schema: organizations(search: String, status: OrganizationStatus, verified: Boolean, pagination: OffsetPaginationInput): OrganizationOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.ORGANIZATION_DIRECTORY_VIEW)
     public Mono<OrganizationOffsetPage> organizations(
             @InputArgument String search,
             @InputArgument OrganizationStatus status,
@@ -166,7 +170,7 @@ public class OrganizationQueryResolver {
      * Schema: organizationCount(status: OrganizationStatus): Long!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.ORGANIZATION_DIRECTORY_VIEW)
     public Mono<Long> organizationCount(@InputArgument OrganizationStatus status) {
         log.debug("GraphQL query: organizationCount(status={})", status);
         return organizationService.countByStatus(status);
@@ -272,4 +276,20 @@ public class OrganizationQueryResolver {
                 });
     }
 
+
+    /**
+     * An organization's profile, once the caller is known to be entitled to it: its owner, a member
+     * who holds the profile permission, or platform staff. Anyone else reads the same empty answer
+     * as an organization that does not exist, so an identifier, slug or owner id is never confirmed
+     * to someone outside it. The profile carries business registration and contact details.
+     */
+    private Mono<Organization> readableByCaller(Mono<Organization> lookup) {
+        return SecurityContextUtils.requireCurrentUserId().flatMap(userId -> lookup.flatMap(organization ->
+                userId.equals(organization.getOwnerId())
+                        ? Mono.just(organization)
+                        : permissionResolution
+                                .hasOrganizationPermission(userId, organization.getId(), Permission.ORGANIZATION_VIEW)
+                                .filter(Boolean::booleanValue)
+                                .map(allowed -> organization)));
+    }
 }

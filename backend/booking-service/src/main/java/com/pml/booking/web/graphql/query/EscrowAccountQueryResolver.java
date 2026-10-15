@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.EventEscrowAccount;
@@ -43,7 +45,7 @@ public class EscrowAccountQueryResolver {
      * Schema: escrowAccount(id: ID!): EventEscrowAccount
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.ESCROW_VIEW)
     public Mono<EventEscrowAccount> escrowAccount(@InputArgument String id) {
         log.debug("GraphQL query: escrowAccount(id={})", id);
         Objects.requireNonNull(id, "Escrow account ID is required");
@@ -55,7 +57,7 @@ public class EscrowAccountQueryResolver {
      * Schema: escrowAccountByNumber(accountNumber: String!): EventEscrowAccount
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEscrowOwner(#accountNumber, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEscrowOwner(authentication, 'escrow:view', #accountNumber)")
     public Mono<EventEscrowAccount> escrowAccountByNumber(@InputArgument String accountNumber) {
         log.debug("GraphQL query: escrowAccountByNumber({})", accountNumber);
         Objects.requireNonNull(accountNumber, "Account number is required");
@@ -67,7 +69,7 @@ public class EscrowAccountQueryResolver {
      * Schema: escrowAccountByEvent(eventId: String!): EventEscrowAccount
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'escrow:view', #eventId)")
     public Mono<EventEscrowAccount> escrowAccountByEvent(@InputArgument String eventId) {
         log.debug("GraphQL query: escrowAccountByEvent({})", eventId);
         Objects.requireNonNull(eventId, "Event ID is required");
@@ -83,7 +85,7 @@ public class EscrowAccountQueryResolver {
      * Schema: escrowAccounts(filter: EscrowAccountFilterInput, pagination: OffsetPaginationInput): EscrowAccountOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.ESCROW_VIEW)
     public Mono<EscrowAccountOffsetPage> escrowAccounts(
             @InputArgument EscrowAccountFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
@@ -101,7 +103,7 @@ public class EscrowAccountQueryResolver {
      * <p>OWASP A01:2021 Compliance: Uses OrganizationSecurityService for multi-tenant isolation.</p>
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrFinancialView(authentication, 'ADMIN,FINANCE', #organizerId)")
+    @PreAuthorize("@organizationSecurityService.permissionOrFinancialView(authentication, 'escrow:view', #organizerId)")
     public Mono<EscrowAccountOffsetPage> escrowAccountsByOrganizer(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination
@@ -121,7 +123,7 @@ public class EscrowAccountQueryResolver {
      * Schema: escrowAccountBalance(accountId: String!): BigDecimal
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEscrowOwner(#accountId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEscrowOwner(authentication, 'escrow:view', #accountId)")
     public Mono<BigDecimal> escrowAccountBalance(@InputArgument String accountId) {
         log.debug("GraphQL query: escrowAccountBalance({})", accountId);
         Objects.requireNonNull(accountId, "Account ID is required");
@@ -135,7 +137,7 @@ public class EscrowAccountQueryResolver {
      * Schema: accountSummary(accountId: String!): AccountSummary
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE') or @eventSecurityService.isEscrowOwner(#accountId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEscrowOwner(authentication, 'escrow:view', #accountId)")
     public Mono<AccountSummary> accountSummary(@InputArgument String accountId) {
         log.debug("GraphQL query: accountSummary({})", accountId);
         Objects.requireNonNull(accountId, "Account ID is required");
@@ -150,7 +152,7 @@ public class EscrowAccountQueryResolver {
      * Schema: platformSummary: PlatformSummary!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE')")
+    @RequiresPermission(Permission.ESCROW_VIEW)
     public Mono<PlatformSummary> platformSummary() {
         log.debug("GraphQL query: platformSummary");
         return platformSummaryService.getCurrentSummary();

@@ -172,7 +172,7 @@ Declared once, in `backend/pom.xml`.
 |---|---|---|
 | `java.version`, `maven.compiler.release` | `21` | every module |
 | `dgs.version` | `10.5.0` | the three subgraphs |
-| `spring-cloud-azure.version` | `5.19.0` | the Service Bus binder |
+| `spring-cloud-azure.version` | `5.19.0` | the Key Vault secrets starter (Service Bus was retired by D-62) |
 | `spring-cloud.version` | `2025.0.0` | the WebFlux gateway |
 | `mongodb.driver.version` | `5.5.1` | the reactive driver |
 | `java-dataloader.version` | `5.0.1` | override for Spring GraphQL 1.4.x |

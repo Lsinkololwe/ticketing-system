@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.enums.AccountType;
@@ -8,7 +10,6 @@ import com.pml.booking.domain.model.ChartOfAccountsEntry;
 import com.pml.booking.service.ChartOfAccountsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -47,7 +48,7 @@ public class ChartOfAccountsQueryResolver {
      * Schema: chartOfAccounts: [ChartOfAccountsEntry!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LEDGER_VIEW)
     public Mono<List<ChartOfAccountsEntry>> chartOfAccounts() {
         log.debug("GraphQL query: chartOfAccounts");
         return chartOfAccountsService.findAllActive().collectList();
@@ -58,7 +59,7 @@ public class ChartOfAccountsQueryResolver {
      * Schema: chartOfAccountsEntry(id: ID!): ChartOfAccountsEntry
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LEDGER_VIEW)
     public Mono<ChartOfAccountsEntry> chartOfAccountsEntry(@InputArgument String id) {
         log.debug("GraphQL query: chartOfAccountsEntry(id={})", id);
         Objects.requireNonNull(id, "Account ID is required");
@@ -70,7 +71,7 @@ public class ChartOfAccountsQueryResolver {
      * Schema: chartOfAccountsByCode(accountCode: String!): ChartOfAccountsEntry
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LEDGER_VIEW)
     public Mono<ChartOfAccountsEntry> chartOfAccountsByCode(@InputArgument String accountCode) {
         log.debug("GraphQL query: chartOfAccountsByCode({})", accountCode);
         Objects.requireNonNull(accountCode, "Account code is required");
@@ -82,7 +83,7 @@ public class ChartOfAccountsQueryResolver {
      * Schema: chartOfAccountsByType(accountType: AccountType!): [ChartOfAccountsEntry!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LEDGER_VIEW)
     public Mono<List<ChartOfAccountsEntry>> chartOfAccountsByType(@InputArgument AccountType accountType) {
         log.debug("GraphQL query: chartOfAccountsByType({})", accountType);
         Objects.requireNonNull(accountType, "Account type is required");

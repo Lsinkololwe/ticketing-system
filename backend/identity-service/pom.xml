@@ -179,16 +179,6 @@
             <artifactId>testcontainers-keycloak</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Flow B integration tests: observable binding for StreamBridge.
-             Substitutes the Azure Service Bus wire protocol ONLY; binding name,
-             destination and payload serialization are still exercised. -->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-stream-test-binder</artifactId>
-            
-            <scope>test</scope>
-        </dependency>
-
         <!-- Password Encoding -->
         <dependency>
             <groupId>org.springframework.security</groupId>
@@ -228,10 +218,10 @@
             <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
         </dependency>
 
-        <!-- Azure Service Bus for cross-service events -->
+        <!-- RabbitMQ for cross-service events -->
         <dependency>
-            <groupId>com.azure.spring</groupId>
-            <artifactId>spring-cloud-azure-stream-binder-servicebus</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
         <!-- Spring Boot DevTools for automatic restart during development -->

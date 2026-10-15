@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>Two rules a review cannot hold</h2>
  * <ul>
- *   <li><b>No {@code StreamBridge} outside an {@code EventBridge}.</b> A send from a service
+ *   <li><b>No broker client outside an {@code EventBridge}.</b> A send from a service
  *       method is a message that leaves before the transaction commits, announcing something
  *       that may never become true — and there is no unsend.</li>
  *   <li><b>No {@code @TransactionalEventListener(AFTER_COMMIT)} that rethrows.</b> An
@@ -33,9 +33,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <h2>Ratcheted, because the migration is in progress</h2>
- * Fourteen {@code StreamBridge.send} sites exist across identity and booking. Each moves behind
- * an {@code EventBridge} as its owning slice is implemented; the budget stops the number rising
- * meanwhile, and a budget not lowered after a move fails the build.
+ * Every service publishes through its outbox, so every budget is zero and the budget only exists to
+ * keep it there: a send site that appears outside {@code AmqpEventTransport} fails the build.
  */
 @Tag("L1")
 @Tag("ET-PLT-003")
@@ -44,8 +43,12 @@ class EventPublicationLintTest {
 
     private static final Path BACKEND_ROOT = Path.of("..");
 
+    /** A send through a Spring AMQP template: the broker client, which only the transport may hold. */
+    private static final java.util.regex.Pattern BROKER_SEND = java.util.regex.Pattern.compile(
+            "\\b(?:rabbitTemplate|amqpTemplate|rabbitOperations)\\.(?:send|convertAndSend|invoke)\\(");
+
     /**
-     * The most {@code streamBridge.send} occurrences each module may hold outside {@code EventBridge}.
+     * The most broker send calls each module may hold outside {@code EventBridge} and its transport.
      * May only fall, and must be lowered when it does.
      *
      * <p>Every service publishes only through its outbox, so every budget is zero.</p>
@@ -57,15 +60,16 @@ class EventPublicationLintTest {
             "api-gateway", 0));
 
     @Test
-    @DisplayName("StreamBridge.send appears only where the budget allows")
-    void streamBridgeUseDoesNotGrow() throws IOException {
+    @DisplayName("a broker send appears only where the budget allows")
+    void brokerSendsDoNotGrow() throws IOException {
         Map<String, Integer> actual = new LinkedHashMap<>();
 
         forEachProductionSource((module, path, body) -> {
-            if (path.getFileName().toString().equals("EventBridge.java")) {
-                return;                     // the one place it is meant to be
+            String file = path.getFileName().toString();
+            if (file.equals("EventBridge.java") || file.equals("AmqpEventTransport.java")) {
+                return;                     // the only places it is meant to be
             }
-            int sends = body.split("streamBridge\\.send\\(", -1).length - 1;
+            int sends = BROKER_SEND.matcher(body).results().mapToInt(m -> 1).sum();
             if (sends > 0) {
                 actual.merge(module, sends, Integer::sum);
             }
@@ -76,7 +80,7 @@ class EventPublicationLintTest {
         SEND_BUDGET.forEach((module, frozen) -> {
             int sends = actual.getOrDefault(module, 0);
             if (sends > frozen) {
-                regressions.add("%s: %d StreamBridge.send sites, budget %d".formatted(module, sends, frozen));
+                regressions.add("%s: %d broker send sites, budget %d".formatted(module, sends, frozen));
             } else if (sends < frozen) {
                 unlowered.add("%s: down to %d from %d — lower the budget to lock the gain in"
                         .formatted(module, sends, frozen));
@@ -86,21 +90,21 @@ class EventPublicationLintTest {
         assertThat(regressions)
                 .as("""
                     A send outside an EventBridge cannot be checked for the two things that \
-                    matter: that it is not inside a transaction, and that the binding is one \
-                    §4 names. A send to an unbound name returns false and the message evaporates.""")
+                    matter: that it is not inside a transaction, and that it goes to an exchange \
+                    §4 names.""")
                 .isEmpty();
         assertThat(unlowered).as("a ratchet that is not tightened stops ratcheting").isEmpty();
     }
 
     @Test
-    @DisplayName("no StreamBridge.send sits inside a @Transactional method")
+    @DisplayName("no broker send sits inside a @Transactional method")
     void nothingPublishesInsideATransaction() throws IOException {
         List<String> violations = new ArrayList<>();
 
         forEachProductionSource((module, path, body) -> {
             String[] lines = body.split("\n", -1);
             for (int i = 0; i < lines.length; i++) {
-                if (!lines[i].contains("streamBridge.send(")) {
+                if (!BROKER_SEND.matcher(lines[i]).find()) {
                     continue;
                 }
                 // Walk back to the enclosing method signature; report only if @Transactional
@@ -193,36 +197,30 @@ class EventPublicationLintTest {
     }
 
     @Test
-    @DisplayName("each service declares the §4 binding on the §4 destination")
-    void bindingsMatchTheSpecification() throws IOException {
-        // A send to a binding nothing is bound to returns false; the message is not queued, not
-        // dead-lettered and not logged as lost. Declaring the name is what makes the difference
-        // between a delivered message and a silent one.
-        Map<String, String[]> expected = Map.of(
-                "catalog-service", new String[]{"catalogEvents-out-0", "catalog-events"},
-                "booking-service", new String[]{"bookingEvents-out-0", "booking-events"},
-                "identity-service", new String[]{"identityEvents-out-0", "identity-events"});
+    @DisplayName("each service publishes on the §4 exchange")
+    void exchangesMatchTheSpecification() throws IOException {
+        // An exchange nobody declared is refused by the broker; one that is declared but not the one §4
+        // names is a message that reaches no subscription. Naming it in configuration is what makes the
+        // difference between a delivered message and a silent one.
+        Map<String, String> expected = Map.of(
+                "catalog-service", "catalog-events",
+                "booking-service", "booking-events",
+                "identity-service", "identity-events");
 
         List<String> problems = new ArrayList<>();
-        for (Map.Entry<String, String[]> entry : expected.entrySet()) {
+        for (Map.Entry<String, String> entry : expected.entrySet()) {
             Path config = BACKEND_ROOT.resolve(entry.getKey()).resolve("src/main/resources/application.yml");
             String body = Files.readString(config);
-            String binding = entry.getValue()[0];
-            String destination = entry.getValue()[1];
-
-            int declared = body.indexOf(binding + ":");
-            if (declared < 0) {
-                problems.add(entry.getKey() + " does not declare " + binding);
-                continue;
+            if (!body.contains("exchange: " + entry.getValue())) {
+                problems.add(entry.getKey() + " does not publish on " + entry.getValue());
             }
-            String following = body.substring(declared, Math.min(body.length(), declared + 200));
-            if (!following.contains("destination: " + destination)) {
-                problems.add("%s declares %s but not on %s".formatted(entry.getKey(), binding, destination));
+            if (!com.pml.shared.event.EventTopology.EXCHANGES.contains(entry.getValue())) {
+                problems.add(entry.getValue() + " is not an exchange the platform topology declares");
             }
         }
 
         assertThat(problems)
-                .as("ET-PLT-003 §4 names three topics and the binding each service publishes on")
+                .as("ET-PLT-003 §4 names three exchanges and the one each service publishes on")
                 .isEmpty();
     }
 

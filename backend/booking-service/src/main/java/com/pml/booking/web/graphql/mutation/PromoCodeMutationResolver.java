@@ -1,5 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
+import com.pml.booking.security.PromoCodeAccess;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.pml.booking.security.TenantReads;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
@@ -10,7 +13,6 @@ import com.pml.booking.service.PromoCodeService;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import jakarta.validation.Valid;
@@ -33,6 +35,7 @@ public class PromoCodeMutationResolver {
 
     private final PromoCodeService promoCodeService;
     private final TenantReads tenantReads;
+    private final PromoCodeAccess access;
 
     /**
      * Create a new promo code.
@@ -41,14 +44,15 @@ public class PromoCodeMutationResolver {
      * <p>Security: createdBy is extracted from JWT, not from client input.</p>
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ORGANIZER') or hasRole('ADMIN')")
+    @RequiresTenantPermission(Permission.PROMOTION_MANAGE)
     public Mono<PromoCode> createPromoCode(
         @Valid @InputArgument CreatePromoCodeInput input
     ) {
         return SecurityContextUtils.requireCurrentUserId()
                 .doOnNext(createdBy -> log.info("GraphQL mutation: createPromoCode for organizer: {}", createdBy))
                 .flatMap(createdBy -> tenantReads.eventOrganizationForCaller(input.eventId())
-                        .flatMap(organizationId -> promoCodeService.createPromoCode(input, createdBy, organizationId)));
+                        .flatMap(organizationId -> access.requireManage(organizationId)
+                                .then(promoCodeService.createPromoCode(input, createdBy, organizationId))));
     }
 
     /**
@@ -56,13 +60,13 @@ public class PromoCodeMutationResolver {
      * Schema: updatePromoCode(id: ID!, input: UpdatePromoCodeInput!): PromoCode!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ORGANIZER') or hasRole('ADMIN')")
+    @RequiresTenantPermission(Permission.PROMOTION_MANAGE)
     public Mono<PromoCode> updatePromoCode(
         @InputArgument String id,
         @Valid @InputArgument CreatePromoCodeInput input
     ) {
         log.info("GraphQL mutation: updatePromoCode({})", id);
-        return tenantReads.promoCodeForCaller(id).then(promoCodeService.updatePromoCode(id, input));
+        return managed(id).then(Mono.defer(() -> promoCodeService.updatePromoCode(id, input)));
     }
 
     /**
@@ -70,10 +74,10 @@ public class PromoCodeMutationResolver {
      * Schema: activatePromoCode(id: ID!): PromoCode!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ORGANIZER') or hasRole('ADMIN')")
+    @RequiresTenantPermission(Permission.PROMOTION_MANAGE)
     public Mono<PromoCode> activatePromoCode(@InputArgument String id) {
         log.info("GraphQL mutation: activatePromoCode({})", id);
-        return tenantReads.promoCodeForCaller(id).then(promoCodeService.activatePromoCode(id));
+        return managed(id).then(Mono.defer(() -> promoCodeService.activatePromoCode(id)));
     }
 
     /**
@@ -81,10 +85,10 @@ public class PromoCodeMutationResolver {
      * Schema: deactivatePromoCode(id: ID!): PromoCode!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ORGANIZER') or hasRole('ADMIN')")
+    @RequiresTenantPermission(Permission.PROMOTION_MANAGE)
     public Mono<PromoCode> deactivatePromoCode(@InputArgument String id) {
         log.info("GraphQL mutation: deactivatePromoCode({})", id);
-        return tenantReads.promoCodeForCaller(id).then(promoCodeService.deactivatePromoCode(id));
+        return managed(id).then(Mono.defer(() -> promoCodeService.deactivatePromoCode(id)));
     }
 
     /**
@@ -92,11 +96,17 @@ public class PromoCodeMutationResolver {
      * Schema: deletePromoCode(id: ID!): DeleteMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ORGANIZER') or hasRole('ADMIN')")
+    @RequiresTenantPermission(Permission.PROMOTION_MANAGE)
     public Mono<String> deletePromoCode(@InputArgument String id) {
         log.info("GraphQL mutation: deletePromoCode({})", id);
-        return tenantReads.promoCodeForCaller(id)
+        return managed(id)
                 .flatMap(promoCode -> promoCodeService.deletePromoCode(id))
                 .thenReturn(id);
+    }
+
+    /** The caller's promo code, once they are known to hold the promotion permission in its organization. */
+    private Mono<PromoCode> managed(String id) {
+        return tenantReads.promoCodeForCaller(id)
+                .flatMap(promoCode -> access.requireManage(promoCode.getOrganizationId()).thenReturn(promoCode));
     }
 }

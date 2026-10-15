@@ -1,10 +1,8 @@
 package com.pml.booking.security;
 
 import com.pml.booking.infrastructure.client.IdentityServiceClient;
-import com.pml.shared.dto.authorization.AuthorizationRequest;
 import com.pml.shared.security.Permission;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -16,7 +14,6 @@ import reactor.core.publisher.Mono;
  * grant on the event decides alone when there is one, and the organization's own status must permit
  * payouts. Which member created the event does not matter. Identity decides; an outage denies.
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PayoutAccess {
@@ -25,20 +22,18 @@ public class PayoutAccess {
 
     /** @return true only when identity authorizes {@code userId} to request payouts for the event */
     public Mono<Boolean> mayRequest(String userId, String organizationId, String eventId) {
-        if (userId == null || userId.isBlank() || organizationId == null || organizationId.isBlank()) {
-            return Mono.just(false);
-        }
-        return identity.checkAuthorization(AuthorizationRequest.builder()
-                        .userId(userId)
-                        .organizationId(organizationId)
-                        .eventId(eventId)
-                        .requiredPermission(Permission.PAYOUT_REQUEST.code())
-                        .build())
-                .map(result -> result.isAuthorized())
-                .onErrorResume(error -> {
-                    log.error("Payout permission check failed for organization {}: {}", organizationId, error.toString());
-                    return Mono.just(false);
-                })
-                .defaultIfEmpty(false);
+        return holds(userId, organizationId, eventId, Permission.PAYOUT_REQUEST);
+    }
+
+    /**
+     * @return true only when identity authorizes {@code userId} to add, verify and remove the
+     * organization's payout accounts; the owner's payout switch does not decide this
+     */
+    public Mono<Boolean> mayManageBankAccounts(String userId, String organizationId) {
+        return holds(userId, organizationId, null, Permission.BANK_MANAGE);
+    }
+
+    private Mono<Boolean> holds(String userId, String organizationId, String eventId, Permission permission) {
+        return OrganizationPermissionCheck.holds(identity, userId, organizationId, eventId, permission);
     }
 }

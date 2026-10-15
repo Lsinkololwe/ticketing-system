@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { refreshSession } from '@/lib/session';
 import { useDocumentUpload, useMyOrganization } from '@pml.tickets/shared/api/organization-admin/modules/organization';
 import { StatusView } from '@/components/onboarding/StatusView';
 import { requiredDocuments } from '@/lib/onboarding/documents';
@@ -12,6 +13,21 @@ export default function ApplicationStatusPage() {
   useEffect(() => {
     if (o?.id) void refresh();
   }, [o?.id, refresh]);
+
+  // An organizer approved while signed in carries the organizer role only after a token refresh; do it
+  // once per organization so the dashboard is reachable without signing out and in again.
+  const approved = o?.status === 'ACTIVE' || o?.status === 'APPROVED';
+  useEffect(() => {
+    if (!approved || !o?.id) return;
+    const marker = `session-refreshed:${o.id}`;
+    try {
+      if (window.sessionStorage.getItem(marker)) return;
+      window.sessionStorage.setItem(marker, '1');
+    } catch {
+      /* storage unavailable: refreshing again is harmless */
+    }
+    void refreshSession();
+  }, [approved, o?.id]);
 
   const catalogue = useOnboardingCatalogue();
   const required = requiredDocuments(catalogue.businessTypes, catalogue.documents, o?.businessType ?? null);

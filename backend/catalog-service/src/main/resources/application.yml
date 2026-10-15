@@ -4,7 +4,7 @@ server:
 
 spring:
   profiles:
-    # Defaults to "local" (Service Bus emulator). Prod sets SPRING_PROFILES_ACTIVE=prod.
+    # Defaults to "local" (the docker-resources dev stack). Prod sets SPRING_PROFILES_ACTIVE=prod.
     active: ${SPRING_PROFILES_ACTIVE:local}
   application:
     name: catalog-service
@@ -28,34 +28,20 @@ spring:
         capacity:
           max-concurrent-activity-executors: 4
 
-  cloud:
-    azure:
-      servicebus:
-        connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:}
-        # No `namespace` key on purpose. An empty one is still "set": it overrides the connection string and sends the
-        # producer to ".servicebus.windows.net", where every send times out. Managed-identity deployments set
-        # SPRING_CLOUD_AZURE_SERVICEBUS_NAMESPACE in the environment instead.
-        producer:
-          send-timeout: 30s
-    stream:
-      default-binder: servicebus
-      function:
-        definition: ""
-      bindings:
-        # The binding the outbox drain publishes on, through EventBridge.
-        catalogEvents-out-0:
-          destination: catalog-events
-      # The Azure binder needs the entity kind spelled out for a producer; without it every send
-      # fails with "Entity type cannot be null" and the outbox never drains.
-      servicebus:
-        bindings:
-          catalogEvents-out-0:
-            producer:
-              entity-type: topic
-              # The binder sends asynchronously unless told otherwise: send() then returns true before the
-              # bus has accepted anything and a later failure is only logged, so the outbox would mark the
-              # event sent and lose it. Synchronous sends raise on failure, which keeps the row pending.
-              sync: true
+  # RabbitMQ carries the cross-service events (identity-events, catalog-events, booking-events).
+  # The broker, its virtual host and this service's credentials are provisioned by the environment;
+  # none has a default, so a missing value stops startup naming the property rather than starting a
+  # service whose outbox can never drain.
+  rabbitmq:
+    host: ${RABBITMQ_HOST}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    virtual-host: ${RABBITMQ_VHOST}
+    # A publish completes only when the broker has confirmed it. The outbox marks a row sent when the
+    # publish completes, so an unconfirmed publish that later failed would be a message the platform
+    # believed it delivered.
+    publisher-confirm-type: simple
 
   data:
     mongodb:
@@ -253,6 +239,11 @@ file-storage:
 aws:
   s3:
     region: ${AWS_REGION:us-east-1}
+    # An S3-compatible endpoint and static keys are for tests and local object stores only; empty means AWS and the
+    # default credential chain.
+    endpoint: ${AWS_S3_ENDPOINT:}
+    access-key: ${AWS_S3_ACCESS_KEY:}
+    secret-key: ${AWS_S3_SECRET_KEY:}
     bucket:
       media: ${AWS_S3_BUCKET_MEDIA:ticketing-media}
 
@@ -283,15 +274,17 @@ platform:
     # moderation has not removed.
     public-paths:
       - /media/files/**
+      # The disk store's upload address (development); the signed token in the query is the credential.
+      - /api/v1/media/upload-target
   # Tenancy: a caller's memberships come from identity-service, which owns them.
   tenancy:
     identity-url: ${services.identity.url}
   # The transactional outbox. Publish, cancel, complete and reschedule stage their
   # envelopes here inside the transaction that changes the event; the drain publishes them on
-  # catalogEvents-out-0.
+  # the catalog-events exchange.
   outbox:
     collection: catalog_outbox
-    binding: catalogEvents-out-0
+    exchange: catalog-events
     drain-interval: PT2S
   events:
     consumer:

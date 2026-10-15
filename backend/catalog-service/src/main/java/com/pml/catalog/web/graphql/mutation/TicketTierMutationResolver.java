@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.mutation;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.CreateTicketTierInput;
@@ -9,7 +11,6 @@ import com.pml.catalog.domain.model.TicketTier;
 import com.pml.catalog.service.TicketTierService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -38,7 +39,7 @@ public class TicketTierMutationResolver {
      * Create a new ticket tier for an event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<TicketTier> createTicketTier(
             @InputArgument String eventId,
             @Valid @InputArgument CreateTicketTierInput input
@@ -51,7 +52,7 @@ public class TicketTierMutationResolver {
      * Update an existing ticket tier
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<TicketTier> updateTicketTier(
             @InputArgument String tierId,
             @Valid @InputArgument UpdateTicketTierInput input
@@ -64,7 +65,7 @@ public class TicketTierMutationResolver {
      * Delete a ticket tier
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<String> deleteTicketTier(@InputArgument String tierId) {
         log.info("Deleting ticket tier {}", tierId);
         return tierService.deleteTier(tierId)
@@ -75,7 +76,7 @@ public class TicketTierMutationResolver {
      * Reorder ticket tiers for an event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Flux<TicketTier> reorderTicketTiers(
             @InputArgument String eventId,
             @InputArgument List<String> tierIds
@@ -88,7 +89,7 @@ public class TicketTierMutationResolver {
      * Activate a ticket tier (make it available for purchase)
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<TicketTier> activateTicketTier(@InputArgument String tierId) {
         log.info("Activating ticket tier: {}", tierId);
         return tierService.activateTier(tierId);
@@ -98,7 +99,7 @@ public class TicketTierMutationResolver {
      * Deactivate a ticket tier (make it unavailable for purchase)
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<TicketTier> deactivateTicketTier(@InputArgument String tierId) {
         log.info("Deactivating ticket tier: {}", tierId);
         return tierService.deactivateTier(tierId);

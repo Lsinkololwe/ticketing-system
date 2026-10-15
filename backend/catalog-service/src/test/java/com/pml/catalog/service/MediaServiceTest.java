@@ -103,7 +103,8 @@ class MediaServiceTest {
         assertThat(new IndexEnsurer(template).ensure(CatalogIndexInitializer.specifications()).block().isClean()).isTrue();
         clock = new MutableClock(T0);
         storage = new LocalMediaStorage(files.toString(), BASE_URL);
-        service = new MediaService(template, storage, clock, CatalogWiring.categories(template), CAP);
+        service = new MediaService(template, storage, clock, CatalogWiring.categories(template), CAP,
+                new MediaUploadTokens("unit-test-upload-signing-key-0123456789", "local", clock));
     }
 
     @AfterAll

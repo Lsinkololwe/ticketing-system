@@ -12,9 +12,9 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: 
 /** Latest audit log entries (auditLogs): the "Recent activity" card of the admin and super admin dashboards. */
 export function RecentActivity({ size = 8 }: { size?: number }) {
   const router = useRouter();
-  const { roles } = useStaff();
+  const { permissions } = useStaff();
   const { entries, loading, error, refetch } = useAuditLogs({ size });
-  const canOpenLog = tabsFor(roles, 'transactions').some((t) => t.id === 'audit');
+  const canOpenLog = tabsFor(permissions, 'transactions').some((t) => t.id === 'audit');
   return (
     <Card>
       <CardHeader title="Recent activity" subtitle="Latest actions from the audit log" />

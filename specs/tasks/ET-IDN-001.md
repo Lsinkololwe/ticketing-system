@@ -159,7 +159,7 @@ if an implementation must deviate.
 - [x] The authenticator never creates a user; a replayed handle fails; the plugin refuses to start without credentials
 - [x] No service-account token is returned as a buyer token; the old `/api/internal/otp/*` and GraphQL authentication operations are gone
 - [x] `ADMIN` cannot complete the contact flow, from UI or URL; `user-sync` listener enabled in both realms
-- [ ] Profile "Sign-in contacts" (R8) and the draft legal pages (R9) pass their Vitest suites and work against the live GraphQL operations of ET-IDN-004 (currently schema-aligned only, not run against the backend)
-- [ ] Playwright covers loading/empty/error/populated by `data-testid`; compliance suite green on all three apps
+- [x] Profile "Sign-in contacts" (R8) and the draft legal pages (R9) pass their Vitest suites (257 in the buyer app) **and were run live against ET-IDN-004 on 2026-10-15**: sign in by email OTP, add a WhatsApp contact (code to the new contact), remove it (code to the primary; the account's sessions end, as the spec requires), removal of the last verified contact refused, `/terms` and `/privacy` served with the draft notice and linked from `/auth` ()
+- [x] Playwright covers loading/empty/error/populated by `data-testid` (buyer `identify.spec.ts` 22, `profile.spec.ts`, `static.spec.ts`; 40 + 22 green); compliance suite (`brand.spec.ts`) green on all three apps
 - [x] `mvn -q -f backend/identity-service test -Dgroups=ET-IDN-001 -DfailIfNoTests=false` green *(run as `mvn -f backend -pl identity-service -am verify -Dgroups=ET-IDN-001`, which also builds the shared test-jar; exit 0)*
-- [ ] Spec `status:` -> `implemented`
+- [x] Spec `status:` -> `implemented` (2026-10-15)

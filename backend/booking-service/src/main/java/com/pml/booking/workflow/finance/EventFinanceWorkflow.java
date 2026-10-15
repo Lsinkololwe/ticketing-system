@@ -8,7 +8,7 @@ import io.temporal.workflow.WorkflowMethod;
 /**
  * One event's money, from on-sale to payout eligibility.
  *
- * <p>Addressed as {@code event-finance/{eventId}}. Catalog's facts arrive through Service Bus and
+ * <p>Addressed as {@code event-finance/{eventId}}. Catalog's facts arrive through RabbitMQ and
  * become signals, each carrying its envelope id so a redelivered fact changes nothing. The workflow
  * owns the hold: seven days from completion, recomputed on reschedule, extended while disputes are
  * open, and followed by payout eligibility and commission recognition exactly once.

@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -56,7 +58,7 @@ public class ReservationMutationResolver {
      */
     @FailClosedOnRevocation
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RESERVATION_MANAGE)
     public Mono<Boolean> forceExpireReservation(@InputArgument String reservationId) {
         log.warn("forceExpireReservation({}) — operator release", reservationId);
         return SecurityContextUtils.requireCurrentUserId()

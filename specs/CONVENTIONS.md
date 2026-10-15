@@ -23,7 +23,7 @@ workflow engine. What it adds is a decision about how the ones already chosen ar
 | Federation | Apollo Federation | **v2.9** | ✓ on all three subgraphs |
 | Business data | Spring Data MongoDB **Reactive**, replica set | 8.x | ✓ driver, ✓ replica set — `docker-resources` runs `mongod --replSet rs0` with keyfile auth |
 | Event publication | MongoDB outbox, staged in the business transaction | — | ✓ all three services, [ET-PLT-003](_platform/003-event-contract/) |
-| Cross-service bus | Azure Service Bus via Spring Cloud Stream — facts only | Azure 5.19.0 | ✓ |
+| Cross-service bus | RabbitMQ via Spring AMQP — facts only (D-62) | Spring Boot's | ✓ |
 | Workflow engine | Temporal — Java SDK and Spring Boot starter; every multi-step, cross-service or timed process is a workflow, every recurring job a Schedule | 1.38.0 | ✓ [ET-PLT-015](_platform/015-durable-execution/), D-21 |
 | Cache, OTP, rate limits | Redis, reactive | 7.x | ✓ |
 | Identity | Keycloak + custom SPI | 26.x | ✓ |
@@ -121,7 +121,7 @@ Specified by [ET-PLT-002](_platform/002-persistence-baseline/).
    atomic           │  → {service}_outbox in MongoDB                   │
                     └──────────────────────────────────────────────────┘
                     ┌──────────────────────────────────────────────────┐
-   cross-service    │  outbox drain → EventBridge → Service Bus        │
+   cross-service    │  outbox drain → EventBridge → RabbitMQ           │
    at-least-once    │  → topic → subscription per consuming service    │
    unordered        │  → consumer: one transaction, or one signal      │
                     └──────────────────────────────────────────────────┘

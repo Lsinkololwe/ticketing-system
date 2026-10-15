@@ -57,10 +57,6 @@ public class IdentityRegistryConformanceMigrationService {
                         "com.pml.identity.domain.model.OwnershipTransferRequest", "ownership_transfers")
                 .rewriteClassTo(IdentityCollections.PAYOUT_CONFIG_AUDIT_LOGS,
                         "com.pml.identity.domain.model.PayoutConfigAuditLog", "payout_config_audit_logs")
-                .rewriteClassTo(IdentityCollections.PERMISSIONS,
-                        "com.pml.identity.domain.model.Permission", "permissions")
-                .rewriteClassTo(IdentityCollections.ROLE_PERMISSIONS,
-                        "com.pml.identity.domain.model.RolePermission", "role_permissions")
                 .rewriteClassTo(IdentityCollections.TEAM_INVITATIONS,
                         "com.pml.identity.domain.model.TeamInvitation", "team_invitations")
                 .rewriteClassTo(IdentityCollections.TOKEN_REVOCATIONS,

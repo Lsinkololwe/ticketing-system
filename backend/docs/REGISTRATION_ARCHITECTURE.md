@@ -73,13 +73,13 @@ This document describes the production-ready registration architecture for the M
 │     │    3. Create/Update User document in MongoDB                 │            │
 │     │    4. IF roles contains ORGANIZER:                           │            │
 │     │       └─ Auto-create Organization (status: DRAFT)        │            │
-│     │    5. Publish UserRegisteredEvent to Azure Service Bus       │            │
+│     │    5. Publish UserRegisteredEvent to RabbitMQ       │            │
 │     └─────────────────────────────────────────────────────────────┘            │
 │                              │                                                  │
 │                              ▼                                                  │
 │  6. CROSS-SERVICE EVENTS                                                        │
 │  ────────────────────────────                                                   │
-│     UserRegisteredEvent → Azure Service Bus "user-events" topic                 │
+│     UserRegisteredEvent → RabbitMQ "user-events" topic                 │
 │         │                                                                       │
 │         ├─► Notification Service: Send welcome email/SMS                        │
 │         ├─► Analytics Service: Track registration                               │

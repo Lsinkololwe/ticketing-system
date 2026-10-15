@@ -10,6 +10,8 @@ import type {
   OrganizerContextQueryVariables,
   OrganizerMembershipQuery,
   OrganizerMembershipQueryVariables,
+  OrganizerPermissionsQuery,
+  OrganizerPermissionsQueryVariables,
 } from '@pml.tickets/shared/types/graphql';
 import { gql } from '@apollo/client';
 import { useQuery } from '@apollo/client/react';
@@ -49,6 +51,14 @@ export const ORGANIZER_MEMBERSHIP = gql`
   }
 `;
 
+export const ORGANIZER_PERMISSIONS = gql`
+  query OrganizerPermissions($organizationId: ID!) {
+    myEffectivePermissions(organizationId: $organizationId) {
+      permissions
+    }
+  }
+`;
+
 export interface OrgCapabilities {
   /** Owner only: bank accounts, deletion, ownership transfer. */
   isOwner: boolean;
@@ -79,27 +89,27 @@ const NONE: OrgCapabilities = {
   canViewTeam: false,
 };
 
-/** Capabilities of one membership role (mirrors the catalogue on the Team page). */
-export function capabilitiesFor(
-  role: OrgRole | null,
-  settings?: { managersCanViewFinancials?: boolean | null; adminsCanRequestPayouts?: boolean | null } | null
-): OrgCapabilities {
-  if (!role) return NONE;
-  const owner = role === 'OWNER';
-  const admin = owner || role === 'ADMIN';
-  const manager = admin || role === 'MANAGER';
+/**
+ * What the screens may offer, from the permission codes the platform reports for the caller in this
+ * organization. The organization's own switches (managers see finance, admins request payouts) are
+ * already applied by the platform when it builds that list, so nothing is re-derived from the role.
+ */
+export function capabilitiesFromPermissions(permissions: readonly string[] | null | undefined): OrgCapabilities {
+  const held = new Set(permissions ?? []);
+  const has = (...codes: string[]) => codes.some((code) => held.has(code));
+  if (held.size === 0) return NONE;
   return {
-    isOwner: owner,
-    canEditOrganization: admin,
-    canManageTeam: admin,
-    canWriteEvents: manager,
-    canRefund: manager,
-    canViewFinance: admin || (role === 'MANAGER' && Boolean(settings?.managersCanViewFinancials)),
-    canRequestPayout: owner || (role === 'ADMIN' && Boolean(settings?.adminsCanRequestPayouts)),
-    canManageMedia: manager || role === 'MARKETER',
-    canNotify: manager,
-    canViewBookings: manager || role === 'CONTRIBUTOR',
-    canViewTeam: manager,
+    isOwner: has('organization:transfer'),
+    canEditOrganization: has('organization:edit'),
+    canManageTeam: has('team:invite', 'team:remove', 'team:role'),
+    canWriteEvents: has('event:create', 'event:edit'),
+    canRefund: has('ticket:refund'),
+    canViewFinance: has('financial:view'),
+    canRequestPayout: has('payout:request'),
+    canManageMedia: has('media:manage'),
+    canNotify: has('event:edit'),
+    canViewBookings: has('attendee:view'),
+    canViewTeam: has('team:view'),
   };
 }
 
@@ -116,14 +126,22 @@ export function useOrgContext() {
   const memData = mem.dataState === 'complete' ? mem.data : undefined;
   const membership = memData?.myOrganizationMembership ?? null;
   const role = (membership?.role ?? null) as OrgRole | null;
-  const capabilities = useMemo(() => capabilitiesFor(role, organization?.settings), [role, organization?.settings]);
+  const perms = useQuery<OrganizerPermissionsQuery, OrganizerPermissionsQueryVariables>(ORGANIZER_PERMISSIONS, {
+    variables: { organizationId: organization?.id ?? '' },
+    skip: !organization?.id,
+    fetchPolicy: 'cache-and-network',
+    errorPolicy: 'all',
+  });
+  const permissions = perms.dataState === 'complete' ? perms.data?.myEffectivePermissions?.permissions : undefined;
+  const capabilities = useMemo(() => capabilitiesFromPermissions(permissions), [permissions]);
   return {
     organization,
     organizationId: organization?.id ?? null,
     membership,
     role,
     capabilities,
-    loading: ctx.loading || (Boolean(organization?.id) && mem.loading && !membership),
+    permissions: permissions ?? [],
+    loading: ctx.loading || (Boolean(organization?.id) && ((mem.loading && !membership) || (perms.loading && !permissions))),
     error: ctx.error ?? mem.error ?? null,
     refetch: async () => {
       await ctx.refetch();

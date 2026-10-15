@@ -35,7 +35,7 @@ public final class OperationGates {
     private OperationGates() {
     }
 
-    /** {@code Type.field} for every root field with neither an {@code @auth} nor a {@code @PreAuthorize}. */
+    /** {@code Type.field} for every root field with no {@code @auth}, no {@code @PreAuthorize} and no {@code @RequiresPermission}. */
     public static List<String> undecided(Path schema, Path resolverSources, Path javaRoot) {
         Set<String> withDirective = new HashSet<>();
         Set<String> rootFields = new TreeSet<>();
@@ -50,7 +50,9 @@ public final class OperationGates {
                 for (Method method : type.getDeclaredMethods()) {
                     String coordinate = coordinate(method);
                     boolean gated = method.isAnnotationPresent(PreAuthorize.class)
-                            || type.isAnnotationPresent(PreAuthorize.class);
+                            || type.isAnnotationPresent(PreAuthorize.class)
+                            || method.isAnnotationPresent(com.pml.shared.security.RequiresPermission.class)
+                            || method.isAnnotationPresent(com.pml.shared.security.RequiresTenantPermission.class);
                     if (coordinate != null && gated) {
                         withAnnotation.add(coordinate);
                     }

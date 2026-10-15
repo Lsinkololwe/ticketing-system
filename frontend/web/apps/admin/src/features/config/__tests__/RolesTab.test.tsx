@@ -25,7 +25,7 @@ describe('RolesTab', () => {
     renderConsole(<RolesTab />);
     const areas = screen.getByRole('table', { name: 'Areas in the navigation drawer' });
     const health = within(areas).getByRole('row', { name: /Health/ });
-    expect(within(health).getAllByRole('img').map((i) => i.getAttribute('aria-label'))).toEqual(['Granted', 'Granted', 'Hidden', 'Granted']);
+    expect(within(health).getAllByRole('img').map((i) => i.getAttribute('aria-label'))).toEqual(['Granted', 'Granted', 'Hidden', 'Hidden']);
     const actions = screen.getByRole('table', { name: 'Actions inside pages' });
     expect(within(actions).getByRole('row', { name: /Delete users/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Preview as this role/ })).toBeNull();

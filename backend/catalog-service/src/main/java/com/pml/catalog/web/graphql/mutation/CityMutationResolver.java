@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.mutation;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.catalog.web.graphql.dto.CreateCityInput;
@@ -9,7 +11,6 @@ import com.pml.catalog.domain.model.City;
 import com.pml.catalog.service.CityService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import jakarta.validation.Valid;
@@ -36,7 +37,7 @@ public class CityMutationResolver {
     private final java.time.Clock clock;
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LOCATION_MANAGE)
     public Mono<City> createCity(
             @Valid @InputArgument CreateCityInput input
     ) {
@@ -45,7 +46,7 @@ public class CityMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LOCATION_MANAGE)
     public Mono<City> updateCity(
             @InputArgument String id,
             @Valid @InputArgument UpdateCityInput input
@@ -60,7 +61,7 @@ public class CityMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.LOCATION_MANAGE)
     public Mono<String> deleteCity(
             @InputArgument String id
     ) {

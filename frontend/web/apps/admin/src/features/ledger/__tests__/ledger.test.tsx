@@ -203,7 +203,7 @@ describe('Reconciliation', () => {
   const run = (o: object = {}) => ({ id: 'run-00000001', reconciliationDate: '2026-10-01T00:00:00Z', type: 'GATEWAY', status: 'REQUIRES_REVIEW', dataSource: null, expectedTotal: 0, actualTotal: 0, variance: 0, matchedCount: 1, unmatchedCount: 1, runBy: 'Ann', startedAt: '2026-10-02T08:00:00Z', completedAt: null, notes: null, items: [{ externalId: 'PAY-1', internalId: null, externalAmount: 80, internalAmount: 100, status: 'AMOUNT_MISMATCH', resolution: null, resolvedBy: null, resolvedAt: null }], ...o });
   it('opens a run, blocks completion while differences are open', async () => {
     h.runs.items = [run()];
-    renderConsole(<ReconTab />, { roles: ['FINANCE'] });
+    renderConsole(<ReconTab />, { roles: ['ADMIN'] });
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
     const sheet = await screen.findByRole('dialog');
     expect(within(sheet).getByRole('button', { name: 'Resolve' })).toBeInTheDocument();
@@ -217,7 +217,7 @@ describe('Reconciliation', () => {
     expect(screen.getByText(/run reconciliation/)).toBeInTheDocument();
   });
   it('settlement form validates the reference format', async () => {
-    renderConsole(<ReconTab />, { roles: ['FINANCE'] });
+    renderConsole(<ReconTab />, { roles: ['ADMIN'] });
     fireEvent.click(screen.getByRole('button', { name: /Record settlement/ }));
     const dlg = await screen.findByRole('dialog');
     fireEvent.click(within(dlg).getByRole('button', { name: 'Record settlement' }));

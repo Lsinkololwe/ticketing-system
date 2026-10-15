@@ -8,6 +8,7 @@ import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.identity.domain.valueobject.OrganizationSettings;
 import com.pml.identity.service.PermissionResolutionService;
 import com.pml.shared.constants.UserType;
+import com.pml.shared.security.Authorities;
 import com.pml.shared.security.Permission;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
@@ -42,20 +43,20 @@ public class PermissionQueryResolver {
     private final PermissionResolutionService permissionResolutionService;
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("@permissionGuards.holds(authentication, 'permission:view')")
     public List<Map<String, Object>> permissions() {
         return Arrays.stream(Permission.values()).map(PermissionQueryResolver::toGraphQl).toList();
     }
 
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("@permissionGuards.holds(authentication, 'permission:view')")
     public Map<String, Object> permission(@InputArgument String code) {
         return Permission.fromCode(code).map(PermissionQueryResolver::toGraphQl).orElse(null);
     }
 
     /** What a named role carries; null when no platform, organization or event role has that name. */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @PreAuthorize("@permissionGuards.holds(authentication, 'permission:view')")
     public Map<String, Object> rolePermissions(@InputArgument String role) {
         if (role == null) {
             return null;
@@ -121,8 +122,9 @@ public class PermissionQueryResolver {
         Set<String> roles = new TreeSet<>();
         for (GrantedAuthority authority : authorities) {
             String name = authority.getAuthority();
-            if (name != null && name.startsWith("ROLE_") && PLATFORM_ROLES.contains(name.substring("ROLE_".length()))) {
-                roles.add(name.substring("ROLE_".length()));
+            if (name != null && name.startsWith(Authorities.ROLE_PREFIX)
+                    && PLATFORM_ROLES.contains(name.substring(Authorities.ROLE_PREFIX.length()))) {
+                roles.add(name.substring(Authorities.ROLE_PREFIX.length()));
             }
         }
         return roles;
@@ -162,7 +164,7 @@ public class PermissionQueryResolver {
         out.put("eventId", resolved.eventId());
         out.put("permissions", List.copyOf(Permission.codes(resolved.permissions())));
         out.put("role", role == null ? null : role.toString());
-        out.put("source", resolved.source());
+        out.put("source", resolved.source().name());
         return out;
     }
 }

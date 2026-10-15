@@ -29,7 +29,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * Event Integration:
  * - A transactional outbox in MongoDB for domain event publication
  *   (com.pml.shared.event.Outbox — there is no Spring Modulith here)
- * - Azure Service Bus for cross-service messaging
+ * - RabbitMQ for cross-service messaging
  *
  * Scaling: 3 pods (highest traffic, transaction-heavy workload)
  *

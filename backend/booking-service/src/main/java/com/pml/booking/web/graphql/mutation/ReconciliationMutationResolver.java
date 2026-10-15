@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.pml.shared.constants.PlatformTime;
 
 import com.netflix.graphql.dgs.DgsComponent;
@@ -14,7 +16,6 @@ import com.pml.booking.web.graphql.dto.ResolveReconciliationItemInput;
 import com.pml.booking.web.graphql.dto.StartReconciliationInput;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
@@ -71,7 +72,7 @@ public class ReconciliationMutationResolver {
      * Schema: startReconciliation(input: StartReconciliationInput!): ReconciliationMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_MANAGE)
     public Mono<ReconciliationRun> startReconciliation(
             @Valid @InputArgument StartReconciliationInput input
     ) {
@@ -138,7 +139,7 @@ public class ReconciliationMutationResolver {
      * Schema: resolveReconciliationItem(runId: ID!, input: ResolveReconciliationItemInput!): ReconciliationMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_MANAGE)
     public Mono<ReconciliationRun> resolveReconciliationItem(
             @InputArgument String runId,
             @Valid @InputArgument ResolveReconciliationItemInput input
@@ -157,7 +158,7 @@ public class ReconciliationMutationResolver {
      * Schema: completeReconciliation(runId: ID!, notes: String): ReconciliationMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_MANAGE)
     public Mono<ReconciliationRun> completeReconciliation(
             @InputArgument String runId,
             @InputArgument(name = "notes") String notes
@@ -172,7 +173,7 @@ public class ReconciliationMutationResolver {
      * Schema: failReconciliation(runId: ID!, reason: String!): ReconciliationMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_MANAGE)
     public Mono<ReconciliationRun> failReconciliation(
             @InputArgument String runId,
             @InputArgument String reason
@@ -195,7 +196,7 @@ public class ReconciliationMutationResolver {
      * Schema: verifyEscrowJournalConsistency(eventId: ID!): EscrowJournalVerificationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_MANAGE)
     public Mono<EscrowJournalVerificationResponse> verifyEscrowJournalConsistency(
             @InputArgument String eventId
     ) {
@@ -263,7 +264,7 @@ public class ReconciliationMutationResolver {
      * Schema: recordGatewaySettlement(input: RecordGatewaySettlementInput!): JournalEntryMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.RECONCILIATION_MANAGE)
     public Mono<JournalEntry> recordGatewaySettlement(
             @Valid @InputArgument RecordGatewaySettlementInput input
     ) {

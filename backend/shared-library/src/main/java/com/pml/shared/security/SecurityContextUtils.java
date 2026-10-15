@@ -202,7 +202,7 @@ public final class SecurityContextUtils {
 
         public boolean hasRole(String role) {
             return (roles != null && roles.contains(role)) ||
-                   (authorities != null && authorities.contains("ROLE_" + role));
+                   (authorities != null && authorities.contains(Authorities.ROLE_PREFIX + role));
         }
 
         public boolean isAdmin() {

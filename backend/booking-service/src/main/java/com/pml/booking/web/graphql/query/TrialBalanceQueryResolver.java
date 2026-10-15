@@ -13,9 +13,10 @@ import com.pml.booking.repository.JournalEntryRepository;
 import com.pml.booking.web.graphql.dto.AccountBalanceDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import com.pml.shared.security.Permission;
+import com.pml.shared.security.RequiresPermission;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -56,7 +57,7 @@ public class TrialBalanceQueryResolver {
      * @param asOf inclusive upper bound; {@code null} means every posted entry to date
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.FINANCIAL_VIEW)
     public Mono<List<AccountBalanceDto>> trialBalance(@InputArgument Instant asOf) {
         log.debug("GraphQL query: trialBalance(asOf={})", asOf);
 

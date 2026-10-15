@@ -220,6 +220,23 @@ class AccessRevocationServiceTest {
     }
 
     @Test
+    @DisplayName("a credential set during a sign-in, which names no session, does not end the session that sign-in created")
+    void firstSignInCredentialDoesNotEndTheNewSession() {
+        java.time.Instant changedAt = java.time.Instant.parse("2026-10-14T14:20:00Z");
+        keycloak.openSession(buyerKeycloakId, "sid-before", changedAt.minusSeconds(3600));
+        keycloak.openSession(buyerKeycloakId, "sid-new-signin", changedAt.plusSeconds(2));
+
+        Long ended = service.cutOtherSessions(buyerKeycloakId, null, changedAt, RevocationTrigger.CREDENTIAL_CHANGE)
+                .block();
+
+        assertThat(ended).isEqualTo(1L);
+        assertThat(repository.existsById(RevocationType.SESSION.documentId("sid-before")).block()).isTrue();
+        assertThat(repository.existsById(RevocationType.SESSION.documentId("sid-new-signin")).block()).isFalse();
+        assertThat(keycloak.sessions(null, buyerKeycloakId).map(view -> view.id()).collectList().block())
+                .containsExactly("sid-new-signin");
+    }
+
+    @Test
     @DisplayName("a credential change for a user this platform does not know ends nothing")
     void unknownKeycloakUserEndsNothing() {
         assertThat(service.cutOtherSessions("unknown-kc-user", "sid-x", RevocationTrigger.CREDENTIAL_CHANGE).block())

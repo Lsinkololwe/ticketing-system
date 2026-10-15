@@ -207,4 +207,30 @@ class UserSyncEventListenerTest {
         factory.create(session).onEvent(login());
         verify(client, times(0)).syncEvent(any());
     }
+
+    @Test
+    @DisplayName("a password set during a sign-in, which names no session, carries the sign-in's session id")
+    void credentialChangeDuringSignInCarriesTheSigninSession() {
+        var context = mock(org.keycloak.models.KeycloakContext.class);
+        var authenticationSession = mock(org.keycloak.sessions.AuthenticationSessionModel.class);
+        var root = mock(org.keycloak.sessions.RootAuthenticationSessionModel.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getAuthenticationSession()).thenReturn(authenticationSession);
+        when(authenticationSession.getParentSession()).thenReturn(root);
+        when(root.getId()).thenReturn("root-session-1");
+
+        org.keycloak.events.Event event = new org.keycloak.events.Event();
+        event.setType(org.keycloak.events.EventType.UPDATE_PASSWORD);
+        event.setRealmId("r1");
+        event.setUserId("kc-1");
+        event.setTime(1_760_000_000_000L);
+
+        listener(direct).onEvent(event);
+
+        org.mockito.ArgumentCaptor<Dto.SyncEvent> sent = org.mockito.ArgumentCaptor.forClass(Dto.SyncEvent.class);
+        org.mockito.Mockito.verify(client).syncEvent(sent.capture());
+        assertThat(sent.getValue().sid())
+                .as("identity keeps the session the person is signing in with, instead of ending it")
+                .isEqualTo("root-session-1");
+    }
 }

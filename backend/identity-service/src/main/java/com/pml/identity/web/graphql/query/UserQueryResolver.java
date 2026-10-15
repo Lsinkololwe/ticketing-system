@@ -1,6 +1,8 @@
 package com.pml.identity.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.domain.enums.AccountStatus;
@@ -62,7 +64,7 @@ public class UserQueryResolver {
      * Schema: user(id: ID!): User
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<User> user(@InputArgument String id) {
         log.debug("GraphQL query: user(id={})", id);
         Objects.requireNonNull(id, "User ID is required");
@@ -74,7 +76,7 @@ public class UserQueryResolver {
      * Schema: userByEmail(email: String!): User
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<User> userByEmail(@InputArgument String email) {
         Objects.requireNonNull(email, "Email is required");
         return userService.findByEmail(email);
@@ -85,7 +87,7 @@ public class UserQueryResolver {
      * Schema: userByPhone(phoneNumber: String!): User
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<User> userByPhone(@InputArgument String phoneNumber) {
         Objects.requireNonNull(phoneNumber, "Phone number is required");
         return userService.findByPhoneNumber(phoneNumber);
@@ -100,7 +102,7 @@ public class UserQueryResolver {
      * Schema: users(search: String, role: UserType, accountStatus: AccountStatus, pagination: OffsetPaginationInput): UserOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<UserOffsetPage> users(
             @InputArgument String search,
             @InputArgument UserType role,
@@ -127,7 +129,7 @@ public class UserQueryResolver {
      * - A04:2021 Insecure Design: Uses MongoDB query, not in-memory filtering
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<UserOffsetPage> usersByRole(
             @InputArgument UserType role,
             @InputArgument Boolean activeOnly,
@@ -155,7 +157,7 @@ public class UserQueryResolver {
      * Schema: userStats: UserStats
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<UserStats> userStats() {
         log.debug("GraphQL query: userStats");
         return userStatsService.getUserStats();
@@ -169,7 +171,7 @@ public class UserQueryResolver {
      * frontend's single {@code PendingCounts} query.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_VIEW)
     public Mono<IdentityPendingCounts> identityPendingCounts() {
         log.debug("GraphQL query: identityPendingCounts");
         return pendingApprovalStatsService.getPendingCounts();

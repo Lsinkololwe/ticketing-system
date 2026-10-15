@@ -431,7 +431,7 @@
 │                                           │                                                         │
 │                                           ▼                                                         │
 │  ╔═══════════════════════════════════════════════════════════════════════════════════════════════╗ │
-│  ║  STEP 14: PUBLISH USER REGISTERED EVENT TO AZURE SERVICE BUS                                   ║ │
+│  ║  STEP 14: PUBLISH USER REGISTERED EVENT TO RABBITMQ                                   ║ │
 │  ╚═══════════════════════════════════════════════════════════════════════════════════════════════╝ │
 │                                                                                                     │
 │    publishUserRegisteredEvent(savedUser):                                                           │
@@ -447,7 +447,7 @@
 │    │  );                                                                                         │ │
 │    │                                                                                             │ │
 │    │  streamBridge.send("userOutput-out-0", event);                                              │ │
-│    │  → Published to Azure Service Bus topic: "user-events"                                      │ │
+│    │  → Published to RabbitMQ topic: "user-events"                                      │ │
 │    └─────────────────────────────────────────────────────────────────────────────────────────────┘ │
 │                                           │                                                         │
 │                                           ▼                                                         │
@@ -559,7 +559,7 @@
 │  }                                                              │
 │           │                                                     │
 │           ▼                                                     │
-│  Azure Service Bus: "user-events" topic                         │
+│  RabbitMQ: "user-events" topic                         │
 │           │                                                     │
 │           ├──► Notification Service                             │
 │           │    └── Send welcome email/SMS                       │

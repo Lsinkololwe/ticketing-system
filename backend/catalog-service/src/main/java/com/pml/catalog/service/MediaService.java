@@ -19,6 +19,7 @@ import com.pml.catalog.web.graphql.dto.UploadStockImageInput;
 import com.pml.shared.constants.EventStatus;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.FieldViolation;
+import com.pml.shared.error.TenantBoundary;
 import com.pml.shared.error.TranslatedRefusal;
 import com.pml.shared.error.ValidationRefusal;
 import com.pml.shared.security.tenancy.CurrentTenantScope;
@@ -34,6 +35,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -66,9 +68,12 @@ public class MediaService {
     private final Clock clock;
     private final EventCategories categories;
     private final int maxAssetsPerOrganization;
+    private final MediaUploadTokens tokens;
 
     public MediaService(ReactiveMongoTemplate mongo, MediaStorage storage, Clock clock, EventCategories categories,
-                        @Value("${catalog.media.max-assets-per-organization:500}") int maxAssetsPerOrganization) {
+                        @Value("${catalog.media.max-assets-per-organization:500}") int maxAssetsPerOrganization,
+                        MediaUploadTokens tokens) {
+        this.tokens = tokens;
         this.mongo = mongo;
         this.storage = storage;
         this.clock = clock;
@@ -104,9 +109,22 @@ public class MediaService {
             return Mono.error(new ValidationRefusal(violations));
         }
         UploadMediaInput input = new UploadMediaInput(fileName, contentType, "", title, altText, eventId);
-        Mono<Boolean> eventOwned = input.eventId() == null
+        return ensureRoom(input.eventId(), organizationId)
+                .then(save(bytes, input.contentType(), input.fileName(), organizationId, MediaAsset.builder()
+                        .kind(MediaKind.ORGANIZER_UPLOAD)
+                        .organizationId(organizationId)
+                        .uploadedBy(userId)
+                        .eventId(input.eventId())
+                        .title(blankToNull(input.title()))
+                        .altText(blankToNull(input.altText()))
+                        .build()));
+    }
+
+    /** The event, when named, is the organization's own, and the library has room for another image. */
+    private Mono<Void> ensureRoom(String eventId, String organizationId) {
+        Mono<Boolean> eventOwned = eventId == null
                 ? Mono.just(true)
-                : mongo.exists(Query.query(Criteria.where("id").is(input.eventId())
+                : mongo.exists(Query.query(Criteria.where("id").is(eventId)
                 .and("organizationId").is(organizationId)), Event.class);
         return eventOwned
                 .flatMap(owned -> owned
@@ -115,16 +133,146 @@ public class MediaService {
                         : Mono.<Long>error(new ValidationRefusal(List.of(
                         new FieldViolation("input.eventId", "is not an event of your organization")))))
                 .flatMap(count -> count >= maxAssetsPerOrganization
-                        ? Mono.<MediaAsset>error(new ValidationRefusal(List.of(new FieldViolation("input",
+                        ? Mono.<Void>error(new ValidationRefusal(List.of(new FieldViolation("input",
                         "the media library holds at most " + maxAssetsPerOrganization + " images; delete some first"))))
-                        : save(bytes, input.contentType(), input.fileName(), organizationId, MediaAsset.builder()
-                        .kind(MediaKind.ORGANIZER_UPLOAD)
-                        .organizationId(organizationId)
-                        .uploadedBy(userId)
-                        .eventId(input.eventId())
-                        .title(blankToNull(input.title()))
-                        .altText(blankToNull(input.altText()))
-                        .build()));
+                        : Mono.<Void>empty());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Two-step upload: a grant to put the file straight to the store, then registration
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** How long a grant, and the token that completes it, stays good. */
+    public static final Duration UPLOAD_GRANT_VALID_FOR = Duration.ofMinutes(15);
+
+    /** What the client needs to send the file itself, then to complete the upload. */
+    public record UploadTicket(String uploadToken, String uploadUrl, String method, Map<String, String> headers,
+                               Instant expiresAt, long maxBytes) {
+    }
+
+    /**
+     * Grants the caller one upload of an image up to {@link MediaRules#MAX_UPLOAD_BYTES}. The file goes
+     * to the private store directly; nothing is registered, so nothing is served, until
+     * {@link #completeOrganizationUpload} has read the bytes and found an image.
+     *
+     * @param organizationId the caller's organization, or {@code null} for the administrators' stock library
+     */
+    public Mono<UploadTicket> requestUpload(String fileName, String contentType, long sizeBytes, String userId,
+                                            String organizationId) {
+        List<FieldViolation> violations = MediaRules.checkDeclaration(fileName, contentType, sizeBytes);
+        if (!violations.isEmpty()) {
+            return Mono.error(new ValidationRefusal(violations));
+        }
+        String type = contentType.toLowerCase(java.util.Locale.ROOT);
+        Mono<Void> room = organizationId == null ? Mono.empty() : ensureRoom(null, organizationId);
+        return room.then(Mono.defer(() -> {
+            String key = storage.newKey(organizationId == null ? "stock" : organizationId, fileName);
+            String token = tokens.issue(key, organizationId == null ? "stock" : "org:" + organizationId, userId,
+                    sanitizeName(fileName), type, sizeBytes, UPLOAD_GRANT_VALID_FOR);
+            return storage.grantUpload(key, type, sizeBytes, UPLOAD_GRANT_VALID_FOR, token)
+                    .map(grant -> new UploadTicket(token, grant.url(), "PUT", grant.headers(),
+                            clock.instant().plus(UPLOAD_GRANT_VALID_FOR), MediaRules.MAX_UPLOAD_BYTES));
+        }));
+    }
+
+    /** Registers the file an organization's member uploaded under a grant, once the bytes prove to be an image. */
+    public Mono<MediaAsset> completeOrganizationUpload(String uploadToken, String title, String altText, String eventId,
+                                                       String userId, String organizationId) {
+        return claimed(uploadToken, "org:" + organizationId, userId).flatMap(claims ->
+                existing(claims).switchIfEmpty(Mono.defer(() -> ensureRoom(eventId, organizationId)
+                        .then(verified(claims).flatMap(bytes -> persist(
+                                Mono.just(new MediaStorage.Stored(claims.fileKey(), bytes.length, sha256(bytes))),
+                                claims.contentType(), claims.fileName(), MediaAsset.builder()
+                                        .kind(MediaKind.ORGANIZER_UPLOAD)
+                                        .organizationId(organizationId)
+                                        .uploadedBy(userId)
+                                        .eventId(eventId)
+                                        .title(blankToNull(title))
+                                        .altText(blankToNull(altText))
+                                        .build()))))));
+    }
+
+    /** Registers a stock image uploaded under a grant. */
+    public Mono<MediaAsset> completeStockUpload(String uploadToken, StockImagePurpose purpose, String categoryCode,
+                                                String title, String altText, String actorId) {
+        List<FieldViolation> violations = new ArrayList<>();
+        String code = blankToNull(categoryCode);
+        if (purpose == null) {
+            violations.add(new FieldViolation("input.purpose", "is required"));
+        }
+        if (purpose == StockImagePurpose.CATEGORY_TILE && code == null) {
+            violations.add(new FieldViolation("input.categoryCode", "is required for a category tile"));
+        }
+        if (purpose == StockImagePurpose.EVENT_COVER && code != null) {
+            violations.add(new FieldViolation("input.categoryCode", "belongs to a category tile, not an event cover"));
+        }
+        if (!violations.isEmpty()) {
+            return Mono.error(new ValidationRefusal(violations));
+        }
+        Mono<Boolean> known = code == null ? Mono.just(true) : categories.isSelectable(code);
+        return claimed(uploadToken, "stock", actorId).flatMap(claims -> existing(claims).switchIfEmpty(Mono.defer(() ->
+                known.flatMap(ok -> ok
+                        ? verified(claims).flatMap(bytes -> persist(
+                        Mono.just(new MediaStorage.Stored(claims.fileKey(), bytes.length, sha256(bytes))),
+                        claims.contentType(), claims.fileName(), MediaAsset.builder()
+                                .kind(MediaKind.STOCK)
+                                .uploadedBy(actorId)
+                                .purpose(purpose)
+                                .categoryCode(code)
+                                .title(blankToNull(title))
+                                .altText(blankToNull(altText))
+                                .active(true)
+                                .build()))
+                        : Mono.<MediaAsset>error(new ValidationRefusal(List.of(
+                        new FieldViolation("input.categoryCode", "is not an active event category")))))))
+        );
+    }
+
+    /**
+     * The claims of a genuine token issued to this caller for this scope. A token for anyone else's
+     * upload is answered as any unknown media is, so a token cannot be probed for existence.
+     */
+    private Mono<MediaUploadTokens.Claims> claimed(String uploadToken, String scope, String userId) {
+        return Mono.justOrEmpty(tokens.verify(uploadToken))
+                .switchIfEmpty(Mono.error(new ValidationRefusal(List.of(new FieldViolation("input.uploadToken",
+                        "is not valid or has expired; request a new upload")))))
+                .flatMap(claims -> claims.scope().equals(scope) && claims.userId().equals(userId)
+                        ? Mono.just(claims)
+                        : Mono.<MediaUploadTokens.Claims>error(TenantBoundary.refuse(ErrorCode.MEDIA_UNKNOWN, "media upload")));
+    }
+
+    /** Completing twice answers with the asset the first completion made. */
+    private Mono<MediaAsset> existing(MediaUploadTokens.Claims claims) {
+        return mongo.findOne(Query.query(Criteria.where("fileKey").is(claims.fileKey()).and("deleted").is(false)),
+                MediaAsset.class);
+    }
+
+    /**
+     * The bytes the client put, once they prove to be exactly the granted size and an image of the granted
+     * type. A file that is not is removed before the refusal, so a bad upload leaves nothing behind.
+     */
+    private Mono<byte[]> verified(MediaUploadTokens.Claims claims) {
+        return storage.read(claims.fileKey())
+                .switchIfEmpty(Mono.error(new ValidationRefusal(List.of(new FieldViolation("input.uploadToken",
+                        "no file has been uploaded for this token")))))
+                .flatMap(bytes -> {
+                    List<FieldViolation> violations = new ArrayList<>(MediaRules.check(claims.fileName(),
+                            claims.contentType(), bytes, "file", MediaRules.MAX_UPLOAD_BYTES));
+                    if (bytes.length != claims.sizeBytes()) {
+                        violations.add(new FieldViolation("file", "is not the size that was requested"));
+                    }
+                    return violations.isEmpty()
+                            ? Mono.just(bytes)
+                            : storage.delete(claims.fileKey()).then(Mono.error(new ValidationRefusal(violations)));
+                });
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is part of every Java runtime", e);
+        }
     }
 
     public Mono<MediaAsset> update(String id, UpdateMediaInput input) {
@@ -442,7 +590,14 @@ public class MediaService {
     // ═══════════════════════════════════════════════════════════════════════════
 
     private Mono<MediaAsset> save(byte[] bytes, String contentType, String fileName, String scope, MediaAsset draft) {
-        return storage.store(bytes, contentType.toLowerCase(java.util.Locale.ROOT), scope, fileName)
+        return persist(storage.store(bytes, contentType.toLowerCase(java.util.Locale.ROOT), scope, fileName),
+                contentType, fileName, draft);
+    }
+
+    /** Writes the asset row for a file the store already holds; without the row the file is never served. */
+    private Mono<MediaAsset> persist(Mono<MediaStorage.Stored> storedFile, String contentType, String fileName,
+                                     MediaAsset draft) {
+        return storedFile
                 .flatMap(stored -> {
                     Instant now = clock.instant();
                     MediaAsset asset = draft.toBuilder()

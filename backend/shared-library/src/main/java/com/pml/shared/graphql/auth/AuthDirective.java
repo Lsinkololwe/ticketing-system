@@ -3,6 +3,8 @@ package com.pml.shared.graphql.auth;
 import graphql.schema.*;
 import graphql.schema.idl.SchemaDirectiveWiring;
 import graphql.schema.idl.SchemaDirectiveWiringEnvironment;
+import com.pml.shared.security.Authorities;
+import com.pml.shared.security.PlatformRole;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
@@ -228,49 +230,20 @@ public class AuthDirective implements SchemaDirectiveWiring {
      * </ul>
      */
     private boolean checkRoleHierarchy(Role requiredRole, Set<String> authorities) {
-        // SUPER_ADMIN has access to everything
-        if (authorities.contains("ROLE_SUPER_ADMIN")) {
+        Set<PlatformRole> held = PlatformRole.heldByAuthority(authorities);
+        // A super administrator is let through everything, including internal-only operations.
+        if (held.contains(PlatformRole.SUPER_ADMIN)) {
             return true;
         }
-
-        // INTERNAL service has access to INTERNAL-marked operations
-        if (requiredRole == Role.INTERNAL) {
-            return authorities.contains("ROLE_INTERNAL") ||
-                   authorities.contains("ROLE_INTERNAL_SERVICE") ||
-                   authorities.contains("SCOPE_internal-read") ||
-                   authorities.contains("SCOPE_internal-write");
-        }
-
-        // Check specific role requirements
         return switch (requiredRole) {
-            case PUBLIC -> true; // Always allowed
-
-            case AUTHENTICATED -> !authorities.isEmpty(); // Any authenticated user
-
-            case CUSTOMER ->
-                authorities.contains("ROLE_CUSTOMER") ||
-                authorities.contains("ROLE_ORGANIZER") ||
-                authorities.contains("ROLE_ADMIN") ||
-                authorities.contains("ROLE_SUPER_ADMIN");
-
-            case ORGANIZER ->
-                authorities.contains("ROLE_ORGANIZER") ||
-                authorities.contains("ROLE_ADMIN") ||
-                authorities.contains("ROLE_SUPER_ADMIN");
-
-            case ADMIN ->
-                authorities.contains("ROLE_ADMIN") ||
-                authorities.contains("ROLE_SUPER_ADMIN");
-
-            case SUPER_ADMIN ->
-                authorities.contains("ROLE_SUPER_ADMIN");
-
-            case FINANCE ->
-                authorities.contains("ROLE_FINANCE") ||
-                authorities.contains("ROLE_ADMIN") ||
-                authorities.contains("ROLE_SUPER_ADMIN");
-
-            case INTERNAL -> false; // Handled above
+            case PUBLIC -> true;
+            case AUTHENTICATED -> !authorities.isEmpty();
+            case INTERNAL -> authorities.stream().anyMatch(Authorities.INTERNAL_CALLER::contains);
+            case CUSTOMER -> PlatformRole.anySatisfies(held, PlatformRole.CUSTOMER);
+            case ORGANIZER -> PlatformRole.anySatisfies(held, PlatformRole.ORGANIZER);
+            case ADMIN -> PlatformRole.anySatisfies(held, PlatformRole.ADMIN);
+            case SUPER_ADMIN -> false;
+            case FINANCE -> PlatformRole.anySatisfies(held, PlatformRole.FINANCE);
         };
     }
 }

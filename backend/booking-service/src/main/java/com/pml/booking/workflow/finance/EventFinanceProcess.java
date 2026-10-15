@@ -24,7 +24,7 @@ import java.time.Instant;
 /**
  * Catalog's facts become signals to the event's finance workflow, and nothing else.
  *
- * <p>The Service Bus consumer checkpoints only after this completes, so a signal Temporal did not
+ * <p>The broker consumer acknowledges only after this completes, so a signal Temporal did not
  * accept is redelivered. Each signal carries its envelope id, and the workflow ignores one it has
  * already seen.
  */

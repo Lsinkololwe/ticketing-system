@@ -295,7 +295,7 @@ class BuildTopologyTest {
                 }
                 assertThat(body)
                         .as(module + " must not depend on " + other + " — services talk over "
-                                + "the graph and Service Bus, never by linking")
+                                + "the graph and the broker, never by linking")
                         .doesNotContain("<artifactId>" + other + "</artifactId>");
             }
         }

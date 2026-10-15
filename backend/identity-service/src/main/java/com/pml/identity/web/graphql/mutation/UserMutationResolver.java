@@ -1,6 +1,8 @@
 package com.pml.identity.web.graphql.mutation;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.identity.account.AccountService;
@@ -82,7 +84,7 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.suspendUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<User> suspendUser(@InputArgument String id, @InputArgument String reason) {
         return actor().flatMap(admin -> accounts.suspend(id, reason, admin))
                 .doOnSuccess(user -> log.info("Account {} suspended", id));
@@ -94,7 +96,7 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.unsuspendUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<User> unsuspendUser(@InputArgument String id) {
         return actor().flatMap(admin -> accounts.unsuspend(id, admin))
                 .doOnSuccess(user -> log.info("Account {} unsuspended", id));
@@ -103,14 +105,14 @@ public class UserMutationResolver {
     /** Deactivation is a suspension: one state, one way in and out. */
     @DgsMutation
     @FailClosedOnRevocation("admin.deactivateUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<Boolean> deactivateUser(@InputArgument String id) {
         return actor().flatMap(admin -> accounts.suspend(id, "deactivated by an administrator", admin)).thenReturn(true);
     }
 
     @DgsMutation
     @FailClosedOnRevocation("admin.activateUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<Boolean> activateUser(@InputArgument String id) {
         return actor().flatMap(admin -> accounts.unsuspend(id, admin)).thenReturn(true);
     }
@@ -118,7 +120,7 @@ public class UserMutationResolver {
     /** Locking is a suspension too; the reason is recorded. */
     @DgsMutation
     @FailClosedOnRevocation("admin.lockUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<Boolean> lockUser(@InputArgument String id, @InputArgument String reason) {
         return actor().flatMap(admin -> accounts.suspend(id, reason == null ? "locked by an administrator" : reason, admin))
                 .thenReturn(true);
@@ -126,7 +128,7 @@ public class UserMutationResolver {
 
     @DgsMutation
     @FailClosedOnRevocation("admin.unlockUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<Boolean> unlockUser(@InputArgument String id) {
         return actor().flatMap(admin -> accounts.unsuspend(id, admin)).thenReturn(true);
     }
@@ -151,7 +153,7 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.createUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<StaffAccountPassword> createUser(@InputArgument Map<String, Object> input) {
         UserType role = staffRole(input.get("role"));
         return StaffRolePolicy.requireSuperAdminToTouch(List.of(role))
@@ -177,7 +179,7 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.resetStaffTemporaryPassword")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @RequiresPermission(Permission.STAFF_MANAGE)
     public Mono<StaffAccountPassword> resetStaffTemporaryPassword(@InputArgument String userId) {
         return actor().flatMap(admin -> userService.resetStaffTemporaryPassword(userId, admin));
     }
@@ -188,7 +190,7 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.deleteUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<User> deleteUser(@InputArgument String id) {
         return actor().flatMap(admin -> userService.deleteUser(id, admin))
                 .doOnSuccess(user -> log.info("Account {} deleted (soft)", id));
@@ -197,7 +199,7 @@ public class UserMutationResolver {
     /** Update a user's names (admin only). Contacts are not editable here, and roles have their own mutations. */
     @DgsMutation
     @FailClosedOnRevocation("admin.updateUser")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<User> updateUser(@InputArgument String id, @Valid @InputArgument UpdateUserInput input) {
         return userService.updateProfile(id, profile(input))
                 .switchIfEmpty(Mono.error(new UserNotFoundException(id)));
@@ -216,7 +218,7 @@ public class UserMutationResolver {
      */
     @DgsMutation
     @FailClosedOnRevocation("admin.addUserRole")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<User> addUserRole(@InputArgument String userId, @InputArgument UserType role) {
         if (userId == null || userId.isBlank()) {
             return Mono.error(new IllegalArgumentException("User ID is required"));
@@ -234,7 +236,7 @@ public class UserMutationResolver {
 
     @DgsMutation
     @FailClosedOnRevocation("admin.removeUserRole")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<User> removeUserRole(@InputArgument String userId, @InputArgument UserType role) {
         if (userId == null || userId.isBlank()) {
             return Mono.error(new IllegalArgumentException("User ID is required"));
@@ -252,7 +254,7 @@ public class UserMutationResolver {
 
     @DgsMutation
     @FailClosedOnRevocation("admin.setUserRoles")
-    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    @RequiresPermission(Permission.USER_MANAGE)
     public Mono<User> setUserRoles(@InputArgument String userId, @InputArgument List<UserType> roles) {
         if (userId == null || userId.isBlank()) {
             return Mono.error(new IllegalArgumentException("User ID is required"));

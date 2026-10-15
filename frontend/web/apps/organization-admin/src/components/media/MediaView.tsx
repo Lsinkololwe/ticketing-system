@@ -70,7 +70,7 @@ export function MediaView(p: MediaViewProps) {
             <SegmentedButton label="View" value={view} onChange={setView} options={[{ value: 'grid', label: 'Grid' }, { value: 'list', label: 'List' }]} />
           </div>
           {list.length === 0 ? (
-            <EmptyState icon="image" title={p.items.length ? 'No images match' : 'No images yet'} description={p.items.length ? 'Clear the search, or upload a new image.' : 'Upload JPG, PNG or WEBP images up to 5 MB each.'} />
+            <EmptyState icon="image" title={p.items.length ? 'No images match' : 'No images yet'} description={p.items.length ? 'Clear the search, or upload a new image.' : 'Upload JPG, PNG or WEBP images up to 20 MB each.'} />
           ) : view === 'grid' ? (
             <div className="oc-opt-grid" role="list" aria-label="Images">
               {list.map((m) => (

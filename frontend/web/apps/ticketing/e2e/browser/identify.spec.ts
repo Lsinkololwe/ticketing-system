@@ -148,7 +148,8 @@ test.describe('refusals from identity-service reach the field unchanged', () => 
     await page.goto('/auth');
     await enter(page, 'Email', email);
     await typeCode(page, '000000');
-    await expect(page.getByTestId('otp-error-OTP_INVALID')).toContainText('2 tries left');
+    await expect(page.getByTestId('otp-error-OTP_INVALID')).toBeVisible();
+    await expect(page.getByTestId('identify-attempts')).toContainText('2 tries left');
     await shot(page, 'identify-invalid', info);
   });
 
@@ -159,7 +160,7 @@ test.describe('refusals from identity-service reach the field unchanged', () => 
     await page.goto('/auth');
     await enter(page, 'Email', email);
     await typeCode(page, '111111');
-    await expect(page.getByTestId('otp-error-OTP_LOCKED')).toContainText(/You can try again at/);
+    await expect(page.getByTestId('otp-error-OTP_LOCKED')).toContainText(/Try again at/);
     await expect(page.getByTestId('otp-submit')).toBeDisabled();
     await shot(page, 'identify-locked', info);
   });

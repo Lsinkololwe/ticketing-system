@@ -1,6 +1,9 @@
 package com.pml.catalog.web.rest;
 
 import com.pml.catalog.domain.enums.StockImagePurpose;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.pml.catalog.domain.model.MediaAsset;
 import com.pml.catalog.security.MediaAuthority;
 import com.pml.catalog.service.MediaRules;
@@ -16,7 +19,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.multipart.FilePart;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -52,7 +54,7 @@ public class MediaUploadController {
 
     /** An organization's own picture. Fields: {@code file}, and optionally {@code title}, {@code altText}, {@code eventId}. */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.MEDIA_MANAGE)
     public Mono<ResponseEntity<Uploaded>> upload(@RequestPart("file") FilePart file,
                                                  @RequestPart(name = "title", required = false) String title,
                                                  @RequestPart(name = "altText", required = false) String altText,
@@ -70,7 +72,7 @@ public class MediaUploadController {
      * for a tile {@code categoryCode}; optionally {@code title} and {@code altText}.
      */
     @PostMapping(path = "/stock", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.STOCK_IMAGE_MANAGE)
     public Mono<ResponseEntity<Uploaded>> uploadStock(@RequestPart("file") FilePart file,
                                                       @RequestPart("purpose") String purpose,
                                                       @RequestPart(name = "categoryCode", required = false) String categoryCode,

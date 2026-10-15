@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.pml.booking.security.TenantReads;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
@@ -40,7 +42,7 @@ public class PromoCodeQueryResolver {
      * Get promo code by ID.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.PROMOTION_MANAGE)
     public Mono<PromoCode> promoCode(@InputArgument String id) {
         log.debug("GraphQL query: promoCode({})", id);
         return tenantReads.promoCodeForCaller(id);
@@ -50,7 +52,7 @@ public class PromoCodeQueryResolver {
      * Get promo code by code string.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.PROMOTION_MANAGE)
     public Mono<PromoCode> promoCodeByCode(@InputArgument String code) {
         log.debug("GraphQL query: promoCodeByCode({})", code);
         return tenantReads.promoCodeByCodeForCaller(code);
@@ -95,7 +97,7 @@ public class PromoCodeQueryResolver {
      * that the requesting user is the event organizer or has admin role.</p>
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN') or @eventSecurityService.isEventOrganizer(#eventId, authentication)")
+    @PreAuthorize("@eventSecurityService.permissionOrEventOrganizer(authentication, 'promotion:manage', #eventId)")
     public Flux<PromoCode> eventPromoCodes(@InputArgument String eventId) {
         log.debug("GraphQL query: eventPromoCodes({})", eventId);
         return promoCodeService.findByEventId(eventId);
@@ -108,7 +110,7 @@ public class PromoCodeQueryResolver {
      * that the requesting user is either the organizer or a team member with access.</p>
      */
     @DgsQuery
-    @PreAuthorize("@organizationSecurityService.rolesOrTeamMember(authentication, 'ADMIN', #organizerId)")
+    @PreAuthorize("@organizationSecurityService.permissionOrTeamMember(authentication, 'promotion:manage', #organizerId)")
     public Flux<PromoCode> organizerPromoCodes(@InputArgument String organizerId) {
         log.debug("GraphQL query: organizerPromoCodes({})", organizerId);
         return promoCodeService.findByOrganizerId(organizerId);

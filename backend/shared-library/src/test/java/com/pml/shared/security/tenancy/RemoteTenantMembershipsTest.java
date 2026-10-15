@@ -47,7 +47,7 @@ class RemoteTenantMembershipsTest {
     @Test
     @DisplayName("only active memberships scope the caller")
     void activeMembershipsOnly() {
-        identity.stubFor(get(urlPathEqualTo(RemoteTenantMemberships.PATH))
+        identity.stubFor(get(urlPathEqualTo("/api/internal/authorization/user-organizations"))
                 .withQueryParam("userId", equalTo("user-1"))
                 .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("""
                         {"organizations":[
@@ -61,7 +61,7 @@ class RemoteTenantMembershipsTest {
     @Test
     @DisplayName("a failed lookup fails — it never becomes \"belongs to nothing\"")
     void outagePropagates() {
-        identity.stubFor(get(urlPathEqualTo(RemoteTenantMemberships.PATH))
+        identity.stubFor(get(urlPathEqualTo("/api/internal/authorization/user-organizations"))
                 .willReturn(aResponse().withStatus(503)));
 
         assertThatThrownBy(() -> memberships.activeOrganizationIdsOf("user-1").block())

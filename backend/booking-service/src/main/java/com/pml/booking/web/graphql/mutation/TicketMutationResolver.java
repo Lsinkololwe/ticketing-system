@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.RequiresTenantPermission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -88,17 +90,26 @@ public class TicketMutationResolver {
 
     /**
      * Cancel a ticket.
-     * processedBy is extracted from JWT - OWASP A01:2021 compliance
+     *
+     * <p>The caller must hold {@code ticket:refund} on the ticket's event: a team member with that
+     * permission, or platform staff. Anyone else is told the ticket does not exist, exactly as for a
+     * ticket that is not there, so the call cannot be used to find out which tickets exist.
+     * {@code processedBy} is taken from the token, never from the request.</p>
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresTenantPermission(Permission.TICKET_REFUND)
     public Mono<Ticket> cancelTicket(
             @InputArgument String ticketNumber,
             @InputArgument String reason
     ) {
         return SecurityContextUtils.requireCurrentUserId()
-                .doOnNext(processedBy -> log.info("Cancelling ticket: {} by: {} reason: {}", ticketNumber, processedBy, reason))
-                .flatMap(processedBy -> ticketService.cancelTicket(ticketNumber, reason, processedBy));
+                .flatMap(processedBy -> ticketRepository.findByTicketNumber(ticketNumber)
+                        .switchIfEmpty(Mono.error(() -> TenantBoundary.refuse(ErrorCode.TICKET_UNKNOWN, "ticket " + ticketNumber)))
+                        .flatMap(ticket -> access.requireEvent(ticket.getEventId(), Permission.TICKET_REFUND)
+                                .onErrorMap(DomainRefusal.class, refusal -> TenantBoundary.refuse(ErrorCode.TICKET_UNKNOWN, "ticket " + ticketNumber))
+                                .thenReturn(ticket))
+                        .doOnNext(ticket -> log.info("Cancelling ticket: {} by: {} reason: {}", ticketNumber, processedBy, reason))
+                        .flatMap(ticket -> ticketService.cancelTicket(ticketNumber, reason, processedBy)));
     }
 
     // ========================================================================
@@ -110,7 +121,7 @@ public class TicketMutationResolver {
      * Schema: adminUpdateTicket(ticketId: ID!, input: AdminTicketUpdateInput!): TicketMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.TICKET_MANAGE)
     public Mono<Ticket> adminUpdateTicket(
             @InputArgument String ticketId,
             @Valid @InputArgument AdminTicketUpdateInput input
@@ -124,7 +135,7 @@ public class TicketMutationResolver {
      * Schema: regenerateTicketQrCode(ticketId: ID!): TicketMutationResponse!
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.TICKET_MANAGE)
     public Mono<Ticket> regenerateTicketQrCode(@InputArgument String ticketId) {
         log.info("Regenerating QR code for ticket: {}", ticketId);
         return ticketService.regenerateTicketQrCode(ticketId);
@@ -136,7 +147,7 @@ public class TicketMutationResolver {
      * processedBy is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.TICKET_MANAGE)
     public Mono<BulkOperationResponse> bulkCancelTickets(
             @InputArgument List<String> ticketIds,
             @InputArgument String reason

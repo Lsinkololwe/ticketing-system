@@ -25,6 +25,27 @@ public interface MediaStorage {
     /** The bytes under {@code fileKey}, or empty when the store has none. */
     Mono<byte[]> read(String fileKey);
 
+    /**
+     * Permission to put one file of exactly {@code sizeBytes} and {@code contentType} under {@code fileKey},
+     * without the bytes passing through this service. The grant binds the size and the type, so a
+     * client cannot send a different file under it.
+     *
+     * @param fileKey a key from {@link #newKey}
+     * @param token   the signed upload token, for a store that has to carry it in the address
+     */
+    Mono<UploadGrant> grantUpload(String fileKey, String contentType, long sizeBytes, java.time.Duration validFor,
+                                  String token);
+
+    /** A fresh key for a file of {@code scope}; random, so it cannot be guessed or enumerated. */
+    default String newKey(String scope, String fileName) {
+        return MediaKeys.keyFor(scope, fileName);
+    }
+
+    /** Writes {@code bytes} at a key this store granted; only a store that receives the upload itself supports it. */
+    default Mono<Void> putAt(String fileKey, byte[] bytes) {
+        return Mono.error(new UnsupportedOperationException("this store is written to directly by the client"));
+    }
+
     /** The public address of the file; computed, so it follows the store and never goes stale. */
     String publicUrl(String fileKey);
 

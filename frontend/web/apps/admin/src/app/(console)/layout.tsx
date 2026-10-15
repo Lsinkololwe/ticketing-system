@@ -11,12 +11,13 @@ import { bff, STAFF_ACCESS_ROLES } from '@/lib/bff';
 import { ConsoleShell } from '@/components/console/ConsoleShell';
 import { StaffProvider } from '@/components/console/StaffContext';
 import { staffRolesOf } from '@/config/navigation';
+import { permissionsOfRoles } from '@pml.tickets/shared/generated/permission-codes';
 
 export default async function ConsoleLayout({ children }: { children: ReactNode }) {
   const session = await bff.requireSession({ roles: STAFF_ACCESS_ROLES });
   const roles = staffRolesOf(session.roles);
   return (
-    <StaffProvider staff={{ id: session.accountId ?? session.sub, name: session.displayName || 'Staff', email: '', roles }}>
+    <StaffProvider staff={{ id: session.accountId ?? session.sub, name: session.displayName || 'Staff', email: '', roles, permissions: permissionsOfRoles(session.roles) }}>
       <ConsoleShell>{children}</ConsoleShell>
     </StaffProvider>
   );

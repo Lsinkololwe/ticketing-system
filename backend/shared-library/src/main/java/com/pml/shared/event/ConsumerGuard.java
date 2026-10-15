@@ -10,7 +10,7 @@ import java.time.Duration;
  * Makes a consumer idempotent on {@code eventId}.
  *
  * <h2>Why every consumer needs one</h2>
- * Azure Service Bus delivers at least once, by design. A consumer that issues a ticket on
+ * The broker delivers at least once, by design. A consumer that issues a ticket on
  * {@code PaymentCompleted} and sees the message twice issues two tickets — and the second is
  * indistinguishable from a legitimate second purchase, so nothing downstream can detect it
  * either.

@@ -2,16 +2,31 @@
 
 > **Conformance** · US Part IV §22 permission resolution algorithm · V3 §3 account access
 
-> **Superseded in part, 2026-09-18 — ROADMAP D-37.** The role → permission mapping is fixed in
-> software and changes only with a release. What this spec calls an administrator-edited mapping —
-> R3's stored role documents, R7's per-role cache, R8's change log, and the `setRolePermissions`,
-> `setRolePermissionActive` and `setPermissionActive` mutations — will not be built, and the
-> `identity_permissions` / `identity_role_permissions` collections were dropped. What stands:
-> R1 and R2, realised as `com.pml.shared.security.Permission` (30 codes, one colon each, no runtime
-> extension), with the platform-role sets on the same enum and the organization and event sets on
-> identity's `OrganizationRole` and `EventRole` ([ET-ORG-003 §4](../../organization/003-permission-resolution/)).
+> **Superseded in part, 2026-09-18 — ROADMAP D-37; closed 2026-10-13 — D-54…D-60.** The role →
+> permission mapping is fixed in software and changes only with a release. What this spec calls an
+> administrator-edited mapping will not be built, and the `identity_permissions` /
+> `identity_role_permissions` collections were dropped. **Withdrawn:** R3 (stored role documents),
+> R4 (implication expander), R6 (inactive roles and permissions), R7 (per-role cache) and R8
+> (administrator writes and change log), together with the `setRolePermissions`,
+> `setRolePermissionActive` and `setPermissionActive` mutations. **What stands:** R1 (closed key
+> grammar), R2 (catalogue declared in code) and R5 (union across platform roles, fail closed),
+> realised as `com.pml.shared.security.Permission` (30 codes, one colon each, no runtime extension),
+> with the platform-role sets on the same enum and the organization and event sets on identity's
+> `OrganizationRole` and `EventRole` ([ET-ORG-003 §4](../../organization/003-permission-resolution/)).
+>
+> Owner decisions that shape what stands: **D-59** codes are `resource:action` as in use, not
+> `module:verb`; **D-54** `bank:manage` is enforced for Owner and Admin whatever the payout switch
+> says; **D-55** `promotion:manage` and `organization:view` are enforced as the role tables define;
+> **D-56** an event grant is exhaustive and carries no deny list; **D-57** platform roles bypass the
+> organization status gate and are audited; **D-58** only a held permission may be granted or
+> denied; **D-60** platform-only permissions are enforced by a method annotation on the specific
+> operation. Sections below that describe withdrawn requirements are kept as history and marked.
+> Tasks: [`specs/tasks/ET-PLT-013.md`](../../tasks/ET-PLT-013.md).
 
 ## 1. Capability
+
+> **Read with the banner.** Where this section says an administrator owns and edits the mapping, or
+> that `manage` implies CRUD, it describes the withdrawn design (D-37, D-59). The mapping is code.
 
 A role is a name. It carries no meaning until something says what a holder of that name may do,
 and the platform has three services that must agree on that answer for every request they serve.
@@ -25,8 +40,8 @@ mapping** — which permissions a role carries, edited by a platform administrat
 audited. Neither store duplicates the other's job. A role that exists in Keycloak with no mapping
 carries no permissions; a mapping for a role Keycloak has never heard of grants nothing to anyone.
 
-Permission keys are written `module:action` — `events:create`, `payouts:approve`,
-`ticket_qr:read`. **Exactly one colon, and no dots.** A key has two parts and only ever two, so
+Permission keys are written `resource:action` — `event:view`, `payout:approve`,
+`event_access:grant` *(D-59; the examples in the withdrawn text below used `module:action`)*. **Exactly one colon, and no dots.** A key has two parts and only ever two, so
 there is nothing to parse and nothing to get wrong. Where a finer subject is needed it becomes its
 own flat module — `ticket_tiers`, `bank_accounts`, `user_phone` — rather than a dotted path,
 because a nested grammar invites arguments about where the boundary sits and produces keys nobody
@@ -102,16 +117,17 @@ product; it must be attributable months later.
 
 ### ET-PLT-013-R1 · The key grammar is closed and parses one way
 
-THE SYSTEM SHALL admit only permission keys matching the §4 grammar, built from the §4 module and
-action vocabularies.
+THE SYSTEM SHALL admit only permission keys matching the §4 grammar. *(As decided in D-59 the
+codes are `resource:action`, as in use — `event:view`, `payout:request`, `event_access:grant` — and
+the `module`/`action` vocabularies below are not adopted.)*
 
 **Acceptance**
 - [ ] A key matches `^[a-z][a-z0-9_]+:[a-z][a-z0-9_]+$` or is refused with `PERMISSION_KEY_INVALID`
 - [ ] **A key containing a `.` is refused**; the grammar has no sub-path form
 - [ ] Splitting on `:` yields exactly two parts for every key in the catalogue, with no further splitting needed
-- [ ] The action part is a member of the §4 closed `Action` vocabulary; anything else is refused
+- [ ] ~~The action part is a member of the §4 closed `Action` vocabulary; anything else is refused~~ *(withdrawn, D-59: the closed set is the `Permission` enum itself)*
 - [ ] No key contains `*`, and a key containing one is refused rather than interpreted
-- [ ] The module part of every key names a row of the §4 module registry
+- [ ] ~~The module part of every key names a row of the §4 module registry~~ *(withdrawn, D-59)*
 - [ ] `PermissionKey.parse` is total: every accepted key round-trips to the same string
 
 ### ET-PLT-013-R2 · The catalogue is declared in code and cannot be extended at runtime
@@ -120,42 +136,44 @@ THE SYSTEM SHALL derive the set of grantable permissions from the code-declared 
 SHALL NOT permit an administrator to create one.
 
 **Acceptance**
-- [ ] `identity_permissions` is populated from the §4 registry at boot, inserting rows that are absent and leaving existing rows untouched
-- [ ] Running the bootstrap twice produces identical rows
+- [ ] ~~`identity_permissions` is populated from the §4 registry at boot, inserting rows that are absent and leaving existing rows untouched~~ *(withdrawn, D-37: no stored catalogue)*
+- [ ] ~~Running the bootstrap twice produces identical rows~~ *(withdrawn, D-37)*
 - [ ] No mutation creates a permission; the GraphQL surface exposes no `createPermission`
-- [ ] A permission present in the collection but absent from the registry is reported as orphaned and is not grantable
-- [ ] Every key in the registry is enforced by at least one `@auth` field or method annotation, asserted by a test that scans both sets
-- [ ] An administrator may edit a permission's description and `active` flag, and nothing else
+- [ ] ~~A permission present in the collection but absent from the registry is reported as orphaned and is not grantable~~ *(withdrawn, D-37)*
+- [ ] Every key in the registry is enforced by at least one `@auth` field or `@RequiresPermission` method, or is listed in the explicit role-gated register (D-60), asserted by `PermissionEnforcementTest` in both directions
+- [ ] ~~An administrator may edit a permission's description and `active` flag, and nothing else~~ *(withdrawn, D-37: nothing is editable)*
 
-### ET-PLT-013-R3 · One document per role holds its grants, and it is the only mapping
+### ET-PLT-013-R3 · One document per role holds its grants, and it is the only mapping — WITHDRAWN (D-37)
 
-WHEN a role's permissions are resolved, THE SYSTEM SHALL read exactly one `identity_role_permissions`
-document and no other collection.
+> **Withdrawn 2026-09-18, ROADMAP D-37.** Not built and not to be built; kept as history. See the banner above.
 
-**Acceptance**
-- [ ] Resolution issues exactly one query per uncached role, asserted by query count
-- [ ] No `$lookup`, aggregation or view participates in resolution
-- [ ] No `identity_roles` collection exists
-- [ ] `_id` is the lower-cased Keycloak role name; two documents for one role are impossible by construction
-- [ ] A grant change is a single-document update and requires no transaction
-- [ ] A role with no document resolves to the empty set, not an error
-- [ ] Every key in a document's `grants` exists in the catalogue and is `active`; a grant of an unknown key is refused at write time with `PERMISSION_UNKNOWN`
+~~WHEN a role's permissions are resolved, THE SYSTEM SHALL read exactly one `identity_role_permissions` document and no other collection.~~
 
-### ET-PLT-013-R4 · Implication expands compact grants into the effective set
+**Acceptance** *(all withdrawn)*
+- [ ] ~~Resolution issues exactly one query per uncached role, asserted by query count~~ *(withdrawn)*
+- [ ] ~~No `$lookup`, aggregation or view participates in resolution~~ *(withdrawn)*
+- [ ] ~~No `identity_roles` collection exists~~ *(withdrawn)*
+- [ ] ~~`_id` is the lower-cased Keycloak role name; two documents for one role are impossible by construction~~ *(withdrawn)*
+- [ ] ~~A grant change is a single-document update and requires no transaction~~ *(withdrawn)*
+- [ ] ~~A role with no document resolves to the empty set, not an error~~ *(withdrawn)*
+- [ ] ~~Every key in a document's `grants` exists in the catalogue and is `active`; a grant of an unknown key is refused at write time with `PERMISSION_UNKNOWN`~~ *(withdrawn)*
 
-WHEN a role's grants are loaded, THE SYSTEM SHALL expand them by the §4 implication rules, and the
-expansion SHALL be idempotent.
+### ET-PLT-013-R4 · Implication expands compact grants into the effective set — WITHDRAWN (D-37)
 
-**Acceptance**
-- [ ] `module:manage` yields `module:create`, `module:read`, `module:update`, `module:delete`
-- [ ] `module:create`, `module:update` and `module:delete` each yield `module:read`
-- [ ] Cross-cutting verbs — `approve`, `export`, `assign`, `scan`, `refund`, `settle`, `configure` — pass through unchanged and imply nothing
-- [ ] `manage` does **not** imply any cross-cutting verb, asserted per verb
-- [ ] `expand(expand(x))` equals `expand(x)` for every catalogue subset in a randomised test of 1,000 cases
-- [ ] Expansion introduces no key absent from the catalogue
-- [ ] Expansion never produces a key containing a `.`
+> **Withdrawn 2026-09-18, ROADMAP D-37.** Not built and not to be built; kept as history. See the banner above.
 
-### ET-PLT-013-R5 · Evaluation is a set membership test over the union of the caller's roles
+~~WHEN a role's grants are loaded, THE SYSTEM SHALL expand them by the §4 implication rules, and the expansion SHALL be idempotent.~~
+
+**Acceptance** *(all withdrawn)*
+- [ ] ~~`module:manage` yields `module:create`, `module:read`, `module:update`, `module:delete`~~ *(withdrawn)*
+- [ ] ~~`module:create`, `module:update` and `module:delete` each yield `module:read`~~ *(withdrawn)*
+- [ ] ~~Cross-cutting verbs — `approve`, `export`, `assign`, `scan`, `refund`, `settle`, `configure` — pass through unchanged and imply nothing~~ *(withdrawn)*
+- [ ] ~~`manage` does **not** imply any cross-cutting verb, asserted per verb~~ *(withdrawn)*
+- [ ] ~~`expand(expand(x))` equals `expand(x)` for every catalogue subset in a randomised test of 1,000 cases~~ *(withdrawn)*
+- [ ] ~~Expansion introduces no key absent from the catalogue~~ *(withdrawn)*
+- [ ] ~~Expansion never produces a key containing a `.`~~ *(withdrawn)*
+
+### ET-PLT-013-R5 · Evaluation is a set membership test over the union of the caller's roles *(stands; realised by the single platform-role model)*
 
 WHEN an operation requires a permission, THE SYSTEM SHALL grant it only if the key is present in
 the union of the expanded sets of the caller's roles.
@@ -164,50 +182,61 @@ the union of the expanded sets of the caller's roles.
 - [ ] Roles are read from the token's `realm_access.roles`; no other claim contributes
 - [ ] A caller with no roles resolves to the empty set and is denied
 - [ ] The union is order-independent, asserted by permuting the role list
-- [ ] A denied check performs no repository call beyond the cached resolution
+- [ ] ~~A denied check performs no repository call beyond the cached resolution~~ *(withdrawn with R3/R7: there is no repository or cache on this path)*
 - [ ] The evaluator returns a boolean and never throws; an internal failure denies
 - [ ] A caller holding two roles receives the union, not the intersection, asserted by a test where each role alone is insufficient
 
-### ET-PLT-013-R6 · Inactive roles and inactive permissions grant nothing
+### ET-PLT-013-R6 · Inactive roles and inactive permissions grant nothing — WITHDRAWN (D-37)
 
-IF a role mapping or a catalogue row is inactive, THEN THE SYSTEM SHALL exclude it from every
-resolution.
+> **Withdrawn 2026-09-18, ROADMAP D-37.** Not built and not to be built; kept as history. See the banner above.
 
-**Acceptance**
-- [ ] A mapping with `active: false` resolves to the empty set even when its `grants` are non-empty
-- [ ] A grant naming a permission whose catalogue row is `active: false` is excluded from the expanded set
-- [ ] Deactivating a permission takes effect within the cache TTL without a deployment
-- [ ] Deactivation never deletes a row; no mutation deletes a catalogue row or a mapping
-- [ ] An inactive permission remains visible to the administrator, marked inactive
+~~IF a role mapping or a catalogue row is inactive, THEN THE SYSTEM SHALL exclude it from every resolution.~~
 
-### ET-PLT-013-R7 · The cache is per role, self-healing, and evicted across instances
+**Acceptance** *(all withdrawn)*
+- [ ] ~~A mapping with `active: false` resolves to the empty set even when its `grants` are non-empty~~ *(withdrawn)*
+- [ ] ~~A grant naming a permission whose catalogue row is `active: false` is excluded from the expanded set~~ *(withdrawn)*
+- [ ] ~~Deactivating a permission takes effect within the cache TTL without a deployment~~ *(withdrawn)*
+- [ ] ~~Deactivation never deletes a row; no mutation deletes a catalogue row or a mapping~~ *(withdrawn)*
+- [ ] ~~An inactive permission remains visible to the administrator, marked inactive~~ *(withdrawn)*
 
-THE SYSTEM SHALL cache the expanded set per role, and SHALL propagate an eviction to every
-instance when a mapping changes.
+### ET-PLT-013-R7 · The cache is per role, self-healing, and evicted across instances — WITHDRAWN (D-37)
 
-**Acceptance**
-- [ ] The cache key is the lower-cased role name; casing differences between token and store collapse to one entry
-- [ ] Entries expire after `platform.permissions.cache-ttl` (PT5M)
-- [ ] A failed load is not cached; the next call retries and succeeds
-- [ ] A mapping change publishes `identity.RolePermissionsChanged` and every instance evicts that role within `platform.permissions.eviction-budget` (PT5S)
-- [ ] A Redis flush does not grant a permission that is not in the store, asserted by flushing mid-suite
-- [ ] Cache memory is bounded by role count; a test with 10,000 distinct principals over 5 roles holds 5 entries
+> **Withdrawn 2026-09-18, ROADMAP D-37.** Not built and not to be built; kept as history. See the banner above.
 
-### ET-PLT-013-R8 · Only a platform administrator changes the mapping, and every change is recorded
+~~THE SYSTEM SHALL cache the expanded set per role, and SHALL propagate an eviction to every instance when a mapping changes.~~
 
-WHEN a role's grants change, THE SYSTEM SHALL require `SUPER_ADMIN`, a reason, and SHALL append an
-immutable record of the change.
+**Acceptance** *(all withdrawn)*
+- [ ] ~~The cache key is the lower-cased role name; casing differences between token and store collapse to one entry~~ *(withdrawn)*
+- [ ] ~~Entries expire after `platform.permissions.cache-ttl` (PT5M)~~ *(withdrawn)*
+- [ ] ~~A failed load is not cached; the next call retries and succeeds~~ *(withdrawn)*
+- [ ] ~~A mapping change publishes `identity.RolePermissionsChanged` and every instance evicts that role within `platform.permissions.eviction-budget` (PT5S)~~ *(withdrawn)*
+- [ ] ~~A Redis flush does not grant a permission that is not in the store, asserted by flushing mid-suite~~ *(withdrawn)*
+- [ ] ~~Cache memory is bounded by role count; a test with 10,000 distinct principals over 5 roles holds 5 entries~~ *(withdrawn)*
 
-**Acceptance**
-- [ ] `setRolePermissions` and `setRolePermissionActive` require `SUPER_ADMIN`; `ADMIN` may read and not write
-- [ ] A change with no reason is refused with `COMMAND_NOT_WELL_FORMED`
-- [ ] Every change appends a row to `identity_role_permission_changes` naming actor, role, added keys, removed keys, reason and instant
-- [ ] No mutation updates or deletes a change row
-- [ ] The grants as at a past instant are recoverable from the change log
-- [ ] Granting a key the actor does not themselves hold is permitted and audited — a platform administrator configures roles they do not occupy
-- [ ] A change to a role held by live sessions takes effect on the next request, within the eviction budget
+### ET-PLT-013-R8 · Only a platform administrator changes the mapping, and every change is recorded — WITHDRAWN (D-37)
+
+> **Withdrawn 2026-09-18, ROADMAP D-37.** Not built and not to be built; kept as history. See the banner above.
+
+~~WHEN a role's grants change, THE SYSTEM SHALL require `SUPER_ADMIN`, a reason, and SHALL append an immutable record of the change.~~
+
+**Acceptance** *(all withdrawn)*
+- [ ] ~~`setRolePermissions` and `setRolePermissionActive` require `SUPER_ADMIN`; `ADMIN` may read and not write~~ *(withdrawn)*
+- [ ] ~~A change with no reason is refused with `COMMAND_NOT_WELL_FORMED`~~ *(withdrawn)*
+- [ ] ~~Every change appends a row to `identity_role_permission_changes` naming actor, role, added keys, removed keys, reason and instant~~ *(withdrawn)*
+- [ ] ~~No mutation updates or deletes a change row~~ *(withdrawn)*
+- [ ] ~~The grants as at a past instant are recoverable from the change log~~ *(withdrawn)*
+- [ ] ~~Granting a key the actor does not themselves hold is permitted and audited — a platform administrator configures roles they do not occupy~~ *(withdrawn)*
+- [ ] ~~A change to a role held by live sessions takes effect on the next request, within the eviction budget~~ *(withdrawn)*
 
 ## 4. Model
+
+> **Disposition, 2026-10-13 — D-59, D-37.** Permission codes are **`resource:action`, as in use**:
+> one colon, lower-case, snake-case parts, a closed set declared in
+> `com.pml.shared.security.Permission` (`event:view`, `payout:request`, `event_access:grant`). The
+> `module:verb` vocabulary, the `manage` aggregate and the implication rules in this section are
+> **not adopted** and no code is renamed. The documents, indexes, resolution diagram, GraphQL
+> mutations, event, Redis keys and configuration below describe withdrawn requirements (R3, R4, R6,
+> R7, R8) and are kept as history only. The grammar and the catalogue-in-code rule stand.
 
 > **Reconciliation note, 2026-09-01 — `myPermissions` · **absent**, not renamed.**
 > Same finding as [ET-ORG-003](../../organization/003-permission-resolution/spec.md): of the four
@@ -348,7 +377,7 @@ render affordances from one fetched answer rather than reimplementing the algori
 
 | Tier | Java type | Wire name | Topic | Consumers |
 |---|---|---|---|---|
-| bus | `RolePermissionsChangedEvent` | `identity.RolePermissionsChanged` v`1` | `identity-events` | catalog, booking — cache eviction |
+| — | none | The role→permission mapping is code (D-37), so a mapping change is a deployment and there is nothing to evict. | — | — |
 
 Identity evicts its own cache in the method that changes the role; there is no in-memory event.
 

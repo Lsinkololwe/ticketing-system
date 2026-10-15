@@ -8,7 +8,7 @@
 Temporal becomes the platform's process layer: every multi-step, cross-service or timed process is a
 workflow whose history survives a crash, whose timers fire with no pod running the code that set
 them, and whose writes are idempotent activities that stage their outbox rows in the same transaction.
-MongoDB stays the system of record and Service Bus stays the broadcast layer (ROADMAP D-21).
+MongoDB stays the system of record and the broker (RabbitMQ, D-62) stays the broadcast layer (ROADMAP D-21).
 
 ## R0 · Reconcile
 

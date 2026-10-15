@@ -1,6 +1,9 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.booking.domain.model.EventEscrowAccount;
@@ -15,7 +18,6 @@ import com.pml.shared.security.tenancy.CurrentTenantScope;
 import com.pml.shared.security.tenancy.TenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
@@ -66,7 +68,7 @@ public class EscrowTransactionQueryResolver {
      * Schema: escrowTransaction(id: ID!): StandaloneEscrowTransaction
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_VIEW)
     public Mono<StandaloneEscrowTransaction> escrowTransaction(@InputArgument String id) {
         log.debug("GraphQL query: escrowTransaction(id={})", id);
         Objects.requireNonNull(id, "Transaction ID is required");
@@ -78,7 +80,7 @@ public class EscrowTransactionQueryResolver {
      * Schema: escrowTransactionsByTicket(ticketId: String!): [StandaloneEscrowTransaction!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_VIEW)
     public Mono<List<StandaloneEscrowTransaction>> escrowTransactionsByTicket(@InputArgument String ticketId) {
         log.debug("GraphQL query: escrowTransactionsByTicket({})", ticketId);
         Objects.requireNonNull(ticketId, "Ticket ID is required");
@@ -90,7 +92,7 @@ public class EscrowTransactionQueryResolver {
      * Schema: escrowTransactionsUnlinked: [StandaloneEscrowTransaction!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_VIEW)
     public Mono<List<StandaloneEscrowTransaction>> escrowTransactionsUnlinked() {
         log.debug("GraphQL query: escrowTransactionsUnlinked");
         return escrowTransactionService.findUnlinkedTransactions().collectList();
@@ -116,7 +118,7 @@ public class EscrowTransactionQueryResolver {
      * a platform scope.
      */
     @DgsQuery
-    @PreAuthorize("hasAnyRole('ADMIN', 'FINANCE', 'ORGANIZER')")
+    @RequiresTenantPermission(Permission.FINANCIAL_VIEW)
     public Mono<EscrowTransactionOffsetPage> escrowTransactions(
             @InputArgument String escrowAccountId,
             @InputArgument OffsetPaginationInput pagination
@@ -149,7 +151,7 @@ public class EscrowTransactionQueryResolver {
      * Schema: escrowBalance(escrowAccountId: String!): BigDecimal!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_VIEW)
     public Mono<BigDecimal> escrowBalance(@InputArgument String escrowAccountId) {
         log.debug("GraphQL query: escrowBalance({})", escrowAccountId);
         Objects.requireNonNull(escrowAccountId, "Escrow account ID is required");
@@ -161,7 +163,7 @@ public class EscrowTransactionQueryResolver {
      * Schema: escrowBalanceAsOf(escrowAccountId: String!, asOf: DateTime!): BigDecimal!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.ESCROW_VIEW)
     public Mono<BigDecimal> escrowBalanceAsOf(
             @InputArgument String escrowAccountId,
             @InputArgument Instant asOf

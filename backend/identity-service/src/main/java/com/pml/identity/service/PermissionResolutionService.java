@@ -1,5 +1,7 @@
 package com.pml.identity.service;
 
+import com.pml.identity.authorization.Decision;
+import com.pml.identity.authorization.PermissionDecider;
 import com.pml.identity.domain.valueobject.EventRole;
 import com.pml.identity.domain.valueobject.OrganizationRole;
 import com.pml.shared.security.Permission;
@@ -66,38 +68,9 @@ public interface PermissionResolutionService {
                                boolean includePlatformRoles);
 
     /**
-     * A decision and what produced it. {@code role} is the member's organization role or the
-     * grant's event role (as a name) when the outcome turned on one; {@code organizationId} and
-     * {@code organizationStatus} are set when an organization was consulted.
-     */
-    record Decision(Outcome outcome, String role, String organizationId, String organizationStatus) {
-
-        public boolean allowed() {
-            return outcome == Outcome.PLATFORM_ROLE || outcome == Outcome.EVENT_GRANT || outcome == Outcome.MEMBER;
-        }
-
-        public static Decision of(Outcome outcome) {
-            return new Decision(outcome, null, null, null);
-        }
-    }
-
-    /** Which step of the order decided, and whether it allowed or refused. */
-    enum Outcome {
-        PLATFORM_ROLE,
-        EVENT_GRANT,
-        MEMBER,
-        PERMISSION_UNKNOWN,
-        GRANT_LACKS_PERMISSION,
-        MEMBER_LACKS_PERMISSION,
-        ORGANIZATION_STATUS,
-        NOT_A_MEMBER,
-        ORGANIZATION_UNKNOWN,
-        NO_ORGANIZATION
-    }
-
-    /**
-     * What a user may do in a context, and which step of the order decided it:
-     * {@code PLATFORM}, {@code EVENT}, {@code ORGANIZATION} or {@code NONE}.
+     * What a user may do in a context, and which source of authority is in play:
+     * platform, event, organization or none. The permissions are every catalogue permission the
+     * decision order would allow, so this answer and {@code decide…} cannot disagree.
      */
     record EffectivePermissions(
             String userId,
@@ -106,6 +79,6 @@ public interface PermissionResolutionService {
             Set<Permission> permissions,
             OrganizationRole organizationRole,
             EventRole eventRole,
-            String source
+            PermissionDecider.Source source
     ) {}
 }

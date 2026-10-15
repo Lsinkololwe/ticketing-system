@@ -44,6 +44,24 @@ public class LocalMediaStorage implements MediaStorage {
     }
 
     @Override
+    public Mono<UploadGrant> grantUpload(String fileKey, String contentType, long sizeBytes,
+                                         java.time.Duration validFor, String token) {
+        // Development only: the client puts the file to this service, which checks the token and writes it.
+        return Mono.just(new UploadGrant(fileKey, publicBaseUrl + "/api/v1/media/upload-target?token=" + token,
+                java.util.Map.of("Content-Type", contentType)));
+    }
+
+    @Override
+    public Mono<Void> putAt(String fileKey, byte[] bytes) {
+        return Mono.fromCallable(() -> {
+            Path target = resolve(fileKey);
+            Files.createDirectories(target.getParent());
+            Files.write(target, bytes);
+            return true;
+        }).subscribeOn(Schedulers.boundedElastic()).then();
+    }
+
+    @Override
     public Mono<Void> delete(String fileKey) {
         return Mono.fromCallable(() -> {
             Files.deleteIfExists(resolve(fileKey));

@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.query;
 
 import com.netflix.graphql.dgs.DgsComponent;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsQuery;
 import com.netflix.graphql.dgs.InputArgument;
 import com.pml.shared.constants.ChargebackStatus;
@@ -12,7 +14,6 @@ import com.pml.booking.web.graphql.dto.OffsetPaginationInput;
 import com.pml.booking.web.graphql.dto.PaginationInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -63,7 +64,7 @@ public class ChargebackQueryResolver {
      * Schema: chargeback(id: ID!): ChargebackRecord
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_VIEW)
     public Mono<ChargebackRecord> chargeback(@InputArgument String id) {
         log.debug("GraphQL query: chargeback(id={})", id);
         Objects.requireNonNull(id, "Chargeback ID is required");
@@ -75,7 +76,7 @@ public class ChargebackQueryResolver {
      * Schema: chargebackByChargebackId(chargebackId: String!): ChargebackRecord
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_VIEW)
     public Mono<ChargebackRecord> chargebackByChargebackId(@InputArgument String chargebackId) {
         log.debug("GraphQL query: chargebackByChargebackId({})", chargebackId);
         Objects.requireNonNull(chargebackId, "Chargeback ID is required");
@@ -91,7 +92,7 @@ public class ChargebackQueryResolver {
      * Schema: pendingChargebacks: [ChargebackRecord!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_VIEW)
     public Mono<List<ChargebackRecord>> pendingChargebacks() {
         log.debug("GraphQL query: pendingChargebacks");
         return Flux.merge(
@@ -105,7 +106,7 @@ public class ChargebackQueryResolver {
      * Schema: chargebacksPendingRecovery: [ChargebackRecord!]!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_VIEW)
     public Mono<List<ChargebackRecord>> chargebacksPendingRecovery() {
         log.debug("GraphQL query: chargebacksPendingRecovery");
         return chargebackService.findPendingRecovery().collectList();
@@ -120,7 +121,7 @@ public class ChargebackQueryResolver {
      * Schema: chargebacks(filter: ChargebackFilterInput, pagination: OffsetPaginationInput): ChargebackOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_VIEW)
     public Mono<ChargebackOffsetPage> chargebacks(
             @InputArgument ChargebackFilterInput filter,
             @InputArgument OffsetPaginationInput pagination
@@ -136,7 +137,7 @@ public class ChargebackQueryResolver {
      * Schema: chargebacksByOrganizer(organizerId: String!, pagination: OffsetPaginationInput): ChargebackOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_VIEW)
     public Mono<ChargebackOffsetPage> chargebacksByOrganizer(
             @InputArgument String organizerId,
             @InputArgument OffsetPaginationInput pagination
@@ -154,7 +155,7 @@ public class ChargebackQueryResolver {
      * Schema: chargebacksByEvent(eventId: String!, pagination: OffsetPaginationInput): ChargebackOffsetPage!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_VIEW)
     public Mono<ChargebackOffsetPage> chargebacksByEvent(
             @InputArgument String eventId,
             @InputArgument OffsetPaginationInput pagination
@@ -176,7 +177,7 @@ public class ChargebackQueryResolver {
      * Schema: chargebackStats(organizerId: String, eventId: String): ChargebackStats!
      */
     @DgsQuery
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_VIEW)
     public Mono<ChargebackService.ChargebackStats> chargebackStats(
             @InputArgument String organizerId,
             @InputArgument String eventId

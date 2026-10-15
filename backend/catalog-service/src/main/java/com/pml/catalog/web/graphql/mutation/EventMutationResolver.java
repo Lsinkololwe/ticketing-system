@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.mutation;
 
 import com.pml.shared.security.Permission;
+import com.pml.shared.security.RequiresTenantPermission;
+import com.pml.shared.security.RequiresPermission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -26,7 +28,6 @@ import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -94,7 +95,7 @@ public class EventMutationResolver {
      * @return Mutation response with created event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_CREATE)
     public Mono<Event> createEvent(
             @Valid @InputArgument CreateEventInput input
     ) {
@@ -127,7 +128,7 @@ public class EventMutationResolver {
      * @return Mutation response with updated event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<Event> updateEvent(
             @InputArgument String id,
             @Valid @InputArgument UpdateEventInput input
@@ -151,7 +152,7 @@ public class EventMutationResolver {
      * @return Mutation response
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_DELETE)
     public Mono<String> deleteEvent(
             @InputArgument String id
     ) {
@@ -169,7 +170,7 @@ public class EventMutationResolver {
      * @return Mutation response with published event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_PUBLISH)
     public Mono<Event> publishEvent(
             @InputArgument String id
     ) {
@@ -197,7 +198,7 @@ public class EventMutationResolver {
      * <p>Security: EVENT_PUBLISH permission verified on the owning organization's event.</p>
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_PUBLISH)
     public Mono<Event> cancelScheduledPublish(@InputArgument String eventId) {
         log.info("Cancelling scheduled publication of event: {}", eventId);
         return eventWriteGuard.forWrite(eventId, Permission.EVENT_PUBLISH)
@@ -214,7 +215,7 @@ public class EventMutationResolver {
      * @return Mutation response with unpublished event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_PUBLISH)
     public Mono<Event> unpublishEvent(
             @InputArgument String id
     ) {
@@ -229,7 +230,7 @@ public class EventMutationResolver {
      * holders' refund window from {@code catalog.EventRescheduled}.
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<Event> rescheduleEvent(
             @Valid @InputArgument RescheduleEventInput input
     ) {
@@ -250,7 +251,7 @@ public class EventMutationResolver {
      * @return Cancellation response, with the refund workflow's id if refunds were started
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_CANCEL)
     public Mono<EventCancellationResponseDto> cancelEvent(
             @InputArgument String id,
             @InputArgument EventCancellationInputDto input
@@ -278,7 +279,7 @@ public class EventMutationResolver {
      * @return Mutation response with submitted event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_PUBLISH)
     public Mono<Event> submitEventForApproval(
             @InputArgument String eventId
     ) {
@@ -293,7 +294,7 @@ public class EventMutationResolver {
      * reviewerId is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.EVENT_APPROVE)
     public Mono<Event> approveEvent(
             @InputArgument String eventId,
             @InputArgument String comments
@@ -308,7 +309,7 @@ public class EventMutationResolver {
      * reviewerId is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.EVENT_APPROVE)
     public Mono<Event> rejectEvent(
             @InputArgument String eventId,
             @InputArgument String comments
@@ -328,7 +329,7 @@ public class EventMutationResolver {
      * @return Mutation response with duplicated event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<Event> duplicateEvent(
             @InputArgument String eventId,
             @InputArgument String newTitle
@@ -374,7 +375,7 @@ public class EventMutationResolver {
      * @return Mutation response with updated event
      */
     @DgsMutation
-    @PreAuthorize("hasAnyRole('ORGANIZER', 'ADMIN')")
+    @RequiresTenantPermission(Permission.EVENT_EDIT)
     public Mono<Event> updateEventCapacity(
             @InputArgument String eventId,
             @InputArgument int newCapacity
@@ -387,7 +388,7 @@ public class EventMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.EVENT_MANAGE)
     public Mono<EventMutationResponse> featureEvent(
             @InputArgument String eventId,
             @InputArgument boolean featured
@@ -407,7 +408,7 @@ public class EventMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN') or hasAuthority('SCOPE_internal-write')")
+    @RequiresPermission(value = Permission.EVENT_MANAGE, orInternalService = true)
     public Mono<EventMutationResponse> completeEvent(
             @InputArgument String id
     ) {
@@ -426,7 +427,7 @@ public class EventMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.EVENT_MANAGE)
     public Mono<EventMutationResponse> sendEventPublishReminder(
             @InputArgument String eventId,
             @InputArgument String triggeredBy
@@ -446,7 +447,7 @@ public class EventMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.EVENT_MANAGE)
     public Mono<BulkReminderResponse> sendBulkEventPublishReminders(
             @InputArgument List<String> eventIds,
             @InputArgument String triggeredBy

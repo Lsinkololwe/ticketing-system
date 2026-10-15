@@ -1,6 +1,8 @@
 package com.pml.catalog.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -15,7 +17,6 @@ import com.pml.catalog.workflow.approval.EventApprovalProcess;
 import com.pml.shared.security.SecurityContextUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import reactor.core.publisher.Mono;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
@@ -49,7 +50,7 @@ public class ApprovalWorkflowMutationResolver {
 
     @FailClosedOnRevocation
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.PLATFORM_CONFIGURE)
     public Mono<com.pml.catalog.domain.model.PlatformConfiguration> updatePlatformConfiguration(
             @Valid @InputArgument UpdatePlatformConfigurationInput input) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -118,7 +119,7 @@ public class ApprovalWorkflowMutationResolver {
      * reviewerId is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_MANAGE)
     public Mono<Event> requestEventChanges(
             @InputArgument String eventId,
             @InputArgument String comments) {
@@ -137,7 +138,7 @@ public class ApprovalWorkflowMutationResolver {
      * The assigner's id is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_MANAGE)
     public Mono<ApprovalTimeline> assignEventReviewer(
             @Valid @InputArgument AssignReviewerInput input) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -148,7 +149,7 @@ public class ApprovalWorkflowMutationResolver {
 
     /** Release the claim held on the event; the item keeps its queue position. */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_MANAGE)
     public Mono<ApprovalTimeline> unassignEventReviewer(
             @InputArgument String eventId,
             @InputArgument String reason) {
@@ -167,7 +168,7 @@ public class ApprovalWorkflowMutationResolver {
      * adminId is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_MANAGE)
     public Mono<ApprovalTimelineMutationResponse> addApprovalComment(
             @InputArgument String eventId,
             @InputArgument String comment,
@@ -191,7 +192,7 @@ public class ApprovalWorkflowMutationResolver {
      * adminId is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_MANAGE)
     public Mono<ApprovalEscalationMutationResponse> acknowledgeEscalation(
             @InputArgument String escalationId,
             @InputArgument String notes) {
@@ -210,7 +211,7 @@ public class ApprovalWorkflowMutationResolver {
      * adminId is extracted from JWT - OWASP A01:2021 compliance
      */
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_MANAGE)
     public Mono<ApprovalEscalationMutationResponse> resolveEscalation(
             @Valid @InputArgument ResolveEscalationInput input) {
         return SecurityContextUtils.requireCurrentUserId()
@@ -225,7 +226,7 @@ public class ApprovalWorkflowMutationResolver {
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.APPROVAL_MANAGE)
     public Mono<ApprovalEscalationMutationResponse> triggerManualEscalation(
             @InputArgument String eventId,
             @InputArgument String reason,

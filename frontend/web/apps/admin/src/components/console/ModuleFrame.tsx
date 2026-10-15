@@ -7,13 +7,13 @@
 import type { ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Card, EmptyState, PageHeader, Tabs, type Crumb } from '@pml.tickets/shared/components/m3';
-import { MODULE_BY_ID, ROLE_LABELS, STAFF_ROLES, canOpenModule, tabsFor, type ModuleId } from '@/config/navigation';
+import { MODULE_BY_ID, ROLE_LABELS, STAFF_ROLES, canOpenModule, grantsOf, tabsFor, type ModuleId } from '@/config/navigation';
 import { useStaff } from './StaffContext';
 import { TopTools } from './TopTools';
 
 export function AccessDenied({ module }: { module: ModuleId }) {
   const m = MODULE_BY_ID[module];
-  const needed = STAFF_ROLES.filter((r) => m.roles.includes(r)).map((r) => ROLE_LABELS[r]);
+  const needed = STAFF_ROLES.filter((r) => canOpenModule(grantsOf(r), module)).map((r) => ROLE_LABELS[r]);
   const router = useRouter();
   return (
     <Card>
@@ -47,8 +47,8 @@ export interface ModuleFrameProps {
 export function ModuleFrame({ module, tab, title, subtitle, actions, breadcrumbs, onBack, tabCounts, children }: ModuleFrameProps) {
   const staff = useStaff();
   const router = useRouter();
-  const allowed = canOpenModule(staff.roles, module);
-  const tabs = tabsFor(staff.roles, module);
+  const allowed = canOpenModule(staff.permissions, module);
+  const tabs = tabsFor(staff.permissions, module);
   const m = MODULE_BY_ID[module];
   const tabAllowed = !tab || tabs.some((t) => t.id === tab);
 

@@ -3,6 +3,7 @@ package com.pml.identity.boot;
 import com.mongodb.reactivestreams.client.MongoClient;
 import com.mongodb.reactivestreams.client.MongoClients;
 import com.pml.shared.testing.MongoReplicaSet;
+import com.pml.shared.testing.RabbitNode;
 import com.pml.shared.testing.RedisNode;
 import com.pml.shared.testing.TemporalDevServer;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -28,7 +29,7 @@ final class IdentityStack {
         return MongoClients.create(MongoReplicaSet.connectionString());
     }
 
-    /** Mongo replica set, Redis, Temporal, and the settings with no safe default that a context needs to start. */
+    /** Mongo replica set, Redis, RabbitMQ, Temporal, and the settings with no safe default that a context needs to start. */
     static void register(DynamicPropertyRegistry registry, String database) {
         registry.add("spring.data.mongodb.uri", MongoReplicaSet::connectionString);
         registry.add("spring.data.mongodb.database", () -> database);
@@ -39,8 +40,13 @@ final class IdentityStack {
         // placeholders application.yml leaves without a default
         registry.add("IDENTITY_SERVICE_SECRET", () -> "test-identity-service-secret");
         registry.add("KEYCLOAK_ADMIN_PASSWORD", () -> "test-admin-password");
-        // no Service Bus here: the test binder stands in for the wire only
-        registry.add("spring.cloud.stream.default-binder", () -> "test");
+        // A real broker on its own virtual host, so a context's topology never meets another test's queues.
+        String vhost = RabbitNode.newVirtualHost();
+        registry.add("spring.rabbitmq.host", RabbitNode::host);
+        registry.add("spring.rabbitmq.port", RabbitNode::port);
+        registry.add("spring.rabbitmq.username", () -> RabbitNode.USERNAME);
+        registry.add("spring.rabbitmq.password", () -> RabbitNode.PASSWORD);
+        registry.add("spring.rabbitmq.virtual-host", () -> vhost);
         registry.add("server.port", () -> TestSocketUtils.findAvailableTcpPort());
     }
 }

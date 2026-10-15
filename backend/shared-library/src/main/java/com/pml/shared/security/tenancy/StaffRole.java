@@ -1,5 +1,8 @@
 package com.pml.shared.security.tenancy;
 
+import com.pml.shared.security.Authorities;
+import com.pml.shared.security.PlatformRole;
+
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.Set;
@@ -22,19 +25,24 @@ import java.util.Set;
  */
 public enum StaffRole {
 
-    ADMIN("ROLE_ADMIN"),
-    SUPER_ADMIN("ROLE_SUPER_ADMIN"),
-    FINANCE("ROLE_FINANCE");
+    ADMIN(PlatformRole.ADMIN),
+    SUPER_ADMIN(PlatformRole.SUPER_ADMIN),
+    FINANCE(PlatformRole.FINANCE);
 
-    private final String authority;
+    private final PlatformRole platformRole;
 
-    StaffRole(String authority) {
-        this.authority = authority;
+    StaffRole(PlatformRole platformRole) {
+        this.platformRole = platformRole;
     }
 
     /** The Spring authority name, for example {@code ROLE_FINANCE}. */
     public String authority() {
-        return authority;
+        return platformRole.authority();
+    }
+
+    /** The platform role this staff role is. */
+    public PlatformRole platformRole() {
+        return platformRole;
     }
 
     /** Every staff role: the set a staff-aware check uses unless it names a narrower one. */
@@ -55,15 +63,15 @@ public enum StaffRole {
         if (held == null || required == null) {
             return false;
         }
-        if (held.contains(SUPER_ADMIN.authority)) {
+        if (held.contains(SUPER_ADMIN.authority())) {
             return true;
         }
         if (SUPER_ADMIN.name().equals(required)) {
             return false;
         }
         if (FINANCE.name().equals(required)) {
-            return held.contains(FINANCE.authority) || held.contains(ADMIN.authority);
+            return held.contains(FINANCE.authority()) || held.contains(ADMIN.authority());
         }
-        return held.contains("ROLE_" + required);
+        return held.contains(Authorities.role(required));
     }
 }

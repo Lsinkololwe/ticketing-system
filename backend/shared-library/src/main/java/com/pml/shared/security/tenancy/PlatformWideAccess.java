@@ -1,5 +1,6 @@
 package com.pml.shared.security.tenancy;
 
+import com.pml.shared.security.Authorities;
 import com.pml.shared.error.ErrorCode;
 import com.pml.shared.error.TranslatedRefusal;
 import io.micrometer.core.instrument.Counter;
@@ -97,6 +98,7 @@ public final class PlatformWideAccess {
         BANK_ACCOUNT_MANAGE(null),
         BANK_ACCOUNTS_READ(null),
         DEFAULT_BANK_ACCOUNT_READ(null),
+        PROMO_CODE_MANAGE(null),
         CALLER_SCOPED_QUERY(null),
         LIFECYCLE_WORKFLOW("system:lifecycle-workflow"),
         EVENT_COMPLETION("system:event-completion"),
@@ -113,7 +115,10 @@ public final class PlatformWideAccess {
         STAFF_PERMISSION_GRANT_READ(null),
         FINANCE_AUDIT_VIEW_READ(null),
         RECOVERY_ACTION_PROPOSE(null),
-        RECOVERY_ACTION_CONFIRM(null);
+        RECOVERY_ACTION_CONFIRM(null),
+
+        // A platform role's grant satisfied an operation's permission; the operation field names the permission.
+        PLATFORM_PERMISSION_EXERCISED(null);
 
         private final String systemSubject;
 
@@ -132,7 +137,7 @@ public final class PlatformWideAccess {
         }
     }
 
-    static final Set<String> DEFAULT_AUTHORITIES = Set.of("ROLE_ADMIN", "ROLE_SUPER_ADMIN");
+    static final Set<String> DEFAULT_AUTHORITIES = Set.of(Authorities.ROLE_ADMIN, Authorities.ROLE_SUPER_ADMIN);
 
     private static final String KEY = PlatformWideAccess.class.getName();
     /** The reaches already recorded in this request, so one request is one row per distinct reach. */

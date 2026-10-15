@@ -1,6 +1,8 @@
 package com.pml.booking.web.graphql.mutation;
 
 import com.pml.shared.security.revocation.FailClosedOnRevocation;
+import com.pml.shared.security.RequiresPermission;
+import com.pml.shared.security.Permission;
 import com.netflix.graphql.dgs.DgsComponent;
 import com.netflix.graphql.dgs.DgsMutation;
 import com.netflix.graphql.dgs.InputArgument;
@@ -12,7 +14,6 @@ import com.pml.shared.security.SecurityContextUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import reactor.core.publisher.Mono;
 
@@ -34,35 +35,35 @@ public class ChargebackMutationResolver {
     private final ChargebackProcess chargebackProcess;
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_MANAGE)
     public Mono<ChargebackRecord> receiveChargeback(@Valid @InputArgument ReceiveChargebackInput input) {
         log.info("GraphQL mutation: receiveChargeback(chargebackId={})", input.chargebackId());
         return chargebackProcess.receive(input);
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_MANAGE)
     public Mono<ChargebackRecord> startChargebackReview(@InputArgument String id, @InputArgument(name = "notes") String notes) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(reviewedBy -> chargebackProcess.startReview(id, reviewedBy, notes != null ? notes : "Review initiated"));
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_MANAGE)
     public Mono<ChargebackRecord> acceptChargeback(@InputArgument String id, @InputArgument(name = "reason") String reason) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(acceptedBy -> chargebackProcess.accept(id, acceptedBy, reason != null ? reason : "Accepted by admin"));
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_MANAGE)
     public Mono<ChargebackRecord> disputeChargeback(@InputArgument String id, @Valid @InputArgument DisputeChargebackInput input) {
         return SecurityContextUtils.requireCurrentUserId()
                 .flatMap(disputedBy -> chargebackProcess.dispute(id, disputedBy, input));
     }
 
     @DgsMutation
-    @PreAuthorize("hasRole('ADMIN')")
+    @RequiresPermission(Permission.CHARGEBACK_MANAGE)
     public Mono<ChargebackRecord> recordChargebackOutcome(@InputArgument String id,
                                                           @InputArgument Boolean won,
                                                           @InputArgument(name = "notes") String notes) {

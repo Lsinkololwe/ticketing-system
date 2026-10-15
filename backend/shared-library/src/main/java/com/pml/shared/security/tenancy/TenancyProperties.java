@@ -1,5 +1,6 @@
 package com.pml.shared.security.tenancy;
 
+import com.pml.shared.security.Authorities;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -16,6 +17,6 @@ import java.util.Set;
  */
 @ConfigurationProperties(prefix = "platform.tenancy")
 public record TenancyProperties(
-        @DefaultValue({"ROLE_ADMIN", "ROLE_SUPER_ADMIN"}) Set<String> platformWideAuthorities,
+        @DefaultValue({Authorities.ROLE_ADMIN, Authorities.ROLE_SUPER_ADMIN}) Set<String> platformWideAuthorities,
         String identityUrl) {
 }

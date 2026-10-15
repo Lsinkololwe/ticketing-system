@@ -168,6 +168,16 @@ public class OrganizationMember {
         return effective;
     }
 
+    /** Whether this member's denials withhold {@code permission}, whatever the role carries. */
+    public boolean denies(Permission permission) {
+        return permission != null && deniedPermissions != null && deniedPermissions.contains(permission.code());
+    }
+
+    /** Whether {@code permission} is among this member's custom additions. */
+    public boolean carriesCustom(Permission permission) {
+        return permission != null && customPermissions != null && customPermissions.contains(permission.code());
+    }
+
     public boolean hasPermission(Permission permission, OrganizationSettings settings) {
         return permission != null && permissions(settings).contains(permission);
     }

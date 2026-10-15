@@ -10,6 +10,7 @@
 import { useQuery } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import type { GetMyPermissionsQuery, GetMyPermissionsQueryVariables } from '../../../../types/graphql';
+import type { PermissionCode } from '../../../../generated/permission-codes';
 
 // Simple query to get current user's permissions
 const GET_MY_PERMISSIONS = gql`
@@ -36,15 +37,15 @@ export function useMyPermissions() {
   const permissions = data?.myPermissions?.permissions || [];
   const roles = data?.myPermissions?.roles || [];
 
-  const hasPermission = (permission: string): boolean => {
+  const hasPermission = (permission: PermissionCode): boolean => {
     return permissions.includes(permission);
   };
 
-  const hasAnyPermission = (perms: string[]): boolean => {
+  const hasAnyPermission = (perms: readonly PermissionCode[]): boolean => {
     return perms.some((p) => permissions.includes(p));
   };
 
-  const hasAllPermissions = (perms: string[]): boolean => {
+  const hasAllPermissions = (perms: readonly PermissionCode[]): boolean => {
     return perms.every((p) => permissions.includes(p));
   };
 

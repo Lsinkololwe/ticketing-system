@@ -29,11 +29,11 @@ export function hrefOf(module: ModuleId, tab?: string): string {
   return tab ? `${m.path}/${tab}` : m.path;
 }
 
-export function pendingFor(roles: readonly StaffRole[], counts: PendingCountsLike): PendingItem[] {
+export function pendingFor(permissions: readonly string[], counts: PendingCountsLike): PendingItem[] {
   const out: PendingItem[] = [];
   const add = (label: string, count: number, module: ModuleId, tab: string) => {
-    if (count <= 0 || !canOpenModule(roles, module)) return;
-    if (!tabsFor(roles, module).some((t) => t.id === tab)) return;
+    if (count <= 0 || !canOpenModule(permissions, module)) return;
+    if (!tabsFor(permissions, module).some((t) => t.id === tab)) return;
     out.push({ label, count, module, tab });
   };
   add('Organizer applications', counts['organizer-applications'], 'approvals', 'orgs');

@@ -19,7 +19,7 @@ This document provides a comprehensive business and technical analysis of missin
 Your ticketing system follows **industry-leading patterns**:
 - **Reactive architecture** (Spring WebFlux + MongoDB Reactive)
 - **Apollo Federation 2** for GraphQL composition
-- **Event-driven communication** (Azure Service Bus through a transactional outbox; processes on Temporal)
+- **Event-driven communication** (RabbitMQ through a transactional outbox; processes on Temporal)
 - **Mobile money integration** (PawaPay) for Zambian market
 
 However, **47+ stub implementations** in the frontend indicate gaps between the admin dashboard's design and backend capabilities, primarily in:
@@ -358,7 +358,7 @@ public Flux<CityEventStats> getEventStatsByCity(String country) {
 |---------|---------|------------------|
 | **Idempotency** | Prevent double charges | Use `correlationId` in transactions |
 | **Saga Pattern** | Distributed transactions | Multi-step ticket purchase |
-| **Dead Letter Queue** | Handle persistent failures | Azure Service Bus DLQ |
+| **Dead Letter Queue** | Handle persistent failures | RabbitMQ DLQ |
 | **Exponential Backoff** | Retry without overload | Mobile money timeouts |
 
 [Flutterwave's fault-tolerant microservice](https://dev.to/flutterwaveeng/how-to-build-a-fault-tolerant-microservice-for-payment-retries-5epg) recommends:
@@ -1764,7 +1764,7 @@ Your implementation MUST follow these existing patterns:
 
 ### Event-Driven Architecture
 - [ ] **Intra-service events**: Use `@ApplicationModuleListener` for guaranteed delivery
-- [ ] **Cross-service events**: Use `StreamBridge` for Azure Service Bus
+- [ ] **Cross-service events**: Use `StreamBridge` for RabbitMQ
 - [ ] **Event publication tracking**: Enable `EventPublicationRegistry` monitoring
 - [ ] **Idempotency**: Include `correlationId` in all payment-related events
 
